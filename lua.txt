@@ -174,12 +174,12 @@ local colStatus, grdStatusPara, trtStatusPara
 -- TAB: Coletor
 ----------------------------------------------------------------
 Tabs.Coletor:AddToggle("AutoCollect", {
-    Title = "Auto Collect",
+    Title = "⚡ Auto Collect",
     Description = "Coleta tokens variantes automaticamente",
     Default = false
 })
 
-colStatus = Tabs.Coletor:AddParagraph({Title = "Status", Content = "desligado"})
+colStatus = Tabs.Coletor:AddParagraph({Title = "📊 Status", Content = "desligado"})
 
 Options.AutoCollect:OnChanged(function()
     autoCollect = Options.AutoCollect.Value
@@ -195,7 +195,7 @@ end)
 refreshUnits()
 
 Tabs.Grade:AddDropdown("GradeUnit", {
-    Title = "Unidade",
+    Title = "🎯 Unidade",
     Description = "Selecione a unidade para reroll de grade",
     Values = unitLabels,
     Default = nil
@@ -207,7 +207,7 @@ Options.GradeUnit:OnChanged(function()
 end)
 
 Tabs.Grade:AddDropdown("GradeTarget", {
-    Title = "Alvo Grade",
+    Title = "⭐ Alvo Grade",
     Values = GRADE_TARGETS,
     Default = 1
 })
@@ -220,12 +220,12 @@ Options.GradeTarget:OnChanged(function()
 end)
 
 Tabs.Grade:AddToggle("AutoGrade", {
-    Title = "Auto Grade",
+    Title = "⬆️ Auto Grade",
     Description = "Reroll grade (exclusivo com Auto Trait)",
     Default = false
 })
 
-grdStatusPara = Tabs.Grade:AddParagraph({Title = "Status", Content = "desligado"})
+grdStatusPara = Tabs.Grade:AddParagraph({Title = "📊 Status", Content = "desligado"})
 
 Options.AutoGrade:OnChanged(function()
     local on = Options.AutoGrade.Value
@@ -246,7 +246,7 @@ end)
 -- TAB: Trait
 ----------------------------------------------------------------
 Tabs.Trait:AddDropdown("TraitUnit", {
-    Title = "Unidade",
+    Title = "🎯 Unidade",
     Description = "Selecione a unidade para reroll de trait",
     Values = unitLabels,
     Default = nil
@@ -258,7 +258,7 @@ Options.TraitUnit:OnChanged(function()
 end)
 
 Tabs.Trait:AddDropdown("TraitTarget", {
-    Title = "Alvo Trait",
+    Title = "✨ Alvo Trait",
     Values = TRAIT_TARGETS,
     Default = 1
 })
@@ -271,12 +271,12 @@ Options.TraitTarget:OnChanged(function()
 end)
 
 Tabs.Trait:AddToggle("AutoTrait", {
-    Title = "Auto Trait",
+    Title = "✨ Auto Trait",
     Description = "Reroll trait (exclusivo com Auto Grade)",
     Default = false
 })
 
-trtStatusPara = Tabs.Trait:AddParagraph({Title = "Status", Content = "desligado"})
+trtStatusPara = Tabs.Trait:AddParagraph({Title = "📊 Status", Content = "desligado"})
 
 Options.AutoTrait:OnChanged(function()
     local on = Options.AutoTrait.Value
@@ -405,7 +405,7 @@ gradeLoop = function(gen)
             if not cur then grdStatusPara:SetDesc("grade nil"); break end
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
-                Fluent:Notify({Title = "Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
+                Fluent:Notify({Title = "⬆️ Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
                 autoGrade = false
                 Options.AutoGrade:SetValue(false)
                 break
@@ -457,7 +457,7 @@ traitLoop = function(gen)
             if not cur then trtStatusPara:SetDesc("trait nil"); break end
             if cur == target then
                 trtStatusPara:SetDesc(cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
-                Fluent:Notify({Title = "Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
+                Fluent:Notify({Title = "✨ Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
                 autoTrait = false
                 Options.AutoTrait:SetValue(false)
                 break
@@ -521,7 +521,7 @@ end)
 ----------------------------------------------------------------
 Window:SelectTab(1)
 Fluent:Notify({
-    Title = "Fazenda de Anime",
+    Title = "🌾 Fazenda de Anime",
     Content = "Script carregado!",
     Duration = 5
 })
