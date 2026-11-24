@@ -1,0 +1,528 @@
+-- Fazenda de Anime | Auto-Collect + Auto-Grade + Auto-Trait
+-- PlaceId: 81833593897486
+-- UI: Fluent by dawid-scripts
+
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Fazenda de Anime",
+    SubTitle = "by Ritmada",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(480, 380),
+    Acrylic = false,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightShift
+})
+
+local Tabs = {
+    Coletor = Window:AddTab({Title = "Coletor", Icon = "gem"}),
+    Grade = Window:AddTab({Title = "Grade", Icon = "arrow-up-circle"}),
+    Trait = Window:AddTab({Title = "Trait", Icon = "sparkles"}),
+    Settings = Window:AddTab({Title = "Settings", Icon = "settings"})
+}
+
+local Options = Fluent.Options
+
+----------------------------------------------------------------
+-- game services & remotes
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local collectRemote = remotes:WaitForChild("CollectVariantTokenSpawn")
+local gradeRemote = remotes:WaitForChild("NewRerollPlayerUnitGrade")
+local traitRemote = remotes:WaitForChild("RerollPlayerUnitTrait")
+
+----------------------------------------------------------------
+-- player data via Replica
+----------------------------------------------------------------
+local getPlayerData
+do
+    local CDM
+    pcall(function()
+        CDM = require(ReplicatedStorage:WaitForChild("Client",5):WaitForChild("Data",5):WaitForChild("ClientDataManager",5))
+    end)
+    getPlayerData = CDM and function()
+        local ok, d = pcall(CDM.GetData)
+        return ok and d or nil
+    end or function() return nil end
+end
+
+----------------------------------------------------------------
+-- state
+----------------------------------------------------------------
+local autoCollect, autoGrade, autoTrait = false, false, false
+local collecting = false
+local cachedBasePos
+local totalCollected, gradeRolls, traitRolls = 0, 0, 0
+local LOOP_DELAY = 0.3
+local gradeGen, traitGen = 0, 0
+local GRADE_ORDER = {F=1,E=2,D=3,C=4,B=5,A=6,S=7,SS=8,X=9,EX=10,UR=11}
+local GRADE_TARGETS = {"S","SS","X","EX","UR"}
+local TRAIT_TARGETS = {"Assassin","Berserk","Midas","Emperor","Phoenix","Angelic","Sovereign"}
+local gradeTargetIdx, traitTargetIdx = 1, 1
+local selectedGradeKey, selectedTraitKey = nil, nil
+
+local POS_GRADE = Vector3.new(-1778.7, 6.5, 27.8)
+local POS_TRAIT = Vector3.new(-1810.7, 6.5, 28.3)
+
+local unitLabels = {}
+local labelToKey = {}
+
+----------------------------------------------------------------
+-- helpers
+----------------------------------------------------------------
+local function getRootPart()
+    local ch = player.Character
+    return ch and ch:FindFirstChild("HumanoidRootPart")
+end
+
+local function getBasePos()
+    if cachedBasePos then return cachedBasePos end
+    local map = workspace:FindFirstChild("Map")
+    local plots = map and map:FindFirstChild("PlotModels")
+    local plot = plots and plots:FindFirstChild(player.Name)
+    if not plot then return nil end
+    local refPos
+    for _, part in ipairs(CollectionService:GetTagged("ConveyorCollectPart")) do
+        if part:IsDescendantOf(plot) then refPos = part.Position; break end
+    end
+    if not refPos then
+        for _, desc in ipairs(plot:GetDescendants()) do
+            if desc:IsA("BasePart") and (desc.Name:find("Collect") or desc.Name:find("Conveyor")) then
+                refPos = desc.Position; break
+            end
+        end
+    end
+    if refPos then
+        local center = plot:GetPivot().Position
+        local dir = Vector3.new(center.X - refPos.X, 0, center.Z - refPos.Z)
+        if dir.Magnitude > 0.5 then
+            local finalPos = refPos - dir.Unit * 16 + Vector3.new(0, 2, 0)
+            local lookAt = finalPos - (refPos - finalPos)
+            cachedBasePos = CFrame.new(finalPos, lookAt)
+            return cachedBasePos
+        end
+    end
+    cachedBasePos = plot:GetPivot().Position
+    return cachedBasePos
+end
+
+local function teleportTo(target)
+    if not target then return end
+    local root = getRootPart()
+    if not root then return end
+    if typeof(target) == "CFrame" then
+        root.CFrame = target
+    else
+        root.CFrame = CFrame.new(target + Vector3.new(0,2,0))
+    end
+end
+
+local function refreshUnits()
+    local data = getPlayerData()
+    unitLabels = {}
+    labelToKey = {}
+    if not data or not data.PlayerUnits then return end
+    local sorted = {}
+    for key, unit in pairs(data.PlayerUnits) do
+        local name = unit.PlayerUnitName or "?"
+        local grade = unit.PlayerUnitGrade or unit.Grade or "?"
+        local trait = unit.PlayerUnitTrait or unit.Trait or "?"
+        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait})
+    end
+    table.sort(sorted, function(a,b) return a.name < b.name end)
+    for _, u in ipairs(sorted) do
+        local label = u.name .. " [" .. u.grade .. "] (" .. u.trait .. ")"
+        table.insert(unitLabels, label)
+        labelToKey[label] = u.key
+    end
+end
+
+local function returnPos()
+    if autoGrade then return POS_GRADE end
+    if autoTrait then return POS_TRAIT end
+    return getBasePos()
+end
+
+local function gradeReached(current, target)
+    return (GRADE_ORDER[current] or 0) >= (GRADE_ORDER[target] or 99)
+end
+
+local function getSpawnNodes()
+    local nodes = CollectionService:GetTagged("VariantTokenSpawn")
+    if #nodes == 0 then
+        local f = workspace:FindFirstChild("Systems")
+        f = f and f:FindFirstChild("VariantTokenSpawns")
+        if f then nodes = f:GetChildren() end
+    end
+    return nodes or {}
+end
+
+----------------------------------------------------------------
+-- forward declarations
+----------------------------------------------------------------
+local collectLoop, gradeLoop, traitLoop
+local colStatus, grdStatusPara, trtStatusPara
+
+----------------------------------------------------------------
+-- TAB: Coletor
+----------------------------------------------------------------
+Tabs.Coletor:AddToggle("AutoCollect", {
+    Title = "Auto Collect",
+    Description = "Coleta tokens variantes automaticamente",
+    Default = false
+})
+
+colStatus = Tabs.Coletor:AddParagraph({Title = "Status", Content = "desligado"})
+
+Options.AutoCollect:OnChanged(function()
+    autoCollect = Options.AutoCollect.Value
+    if autoCollect then
+        colStatus:SetDesc("ligado")
+        task.spawn(collectLoop)
+    end
+end)
+
+----------------------------------------------------------------
+-- TAB: Grade
+----------------------------------------------------------------
+refreshUnits()
+
+Tabs.Grade:AddDropdown("GradeUnit", {
+    Title = "Unidade",
+    Description = "Selecione a unidade para reroll de grade",
+    Values = unitLabels,
+    Default = nil
+})
+
+Options.GradeUnit:OnChanged(function()
+    local label = Options.GradeUnit.Value
+    selectedGradeKey = labelToKey[label] or nil
+end)
+
+Tabs.Grade:AddDropdown("GradeTarget", {
+    Title = "Alvo Grade",
+    Values = GRADE_TARGETS,
+    Default = 1
+})
+
+Options.GradeTarget:OnChanged(function()
+    local val = Options.GradeTarget.Value
+    for i, v in ipairs(GRADE_TARGETS) do
+        if v == val then gradeTargetIdx = i; break end
+    end
+end)
+
+Tabs.Grade:AddToggle("AutoGrade", {
+    Title = "Auto Grade",
+    Description = "Reroll grade (exclusivo com Auto Trait)",
+    Default = false
+})
+
+grdStatusPara = Tabs.Grade:AddParagraph({Title = "Status", Content = "desligado"})
+
+Options.AutoGrade:OnChanged(function()
+    local on = Options.AutoGrade.Value
+    if on then
+        if autoTrait then
+            Options.AutoTrait:SetValue(false)
+        end
+        autoGrade = true
+        gradeGen = gradeGen + 1
+        grdStatusPara:SetDesc("iniciando...")
+        task.spawn(gradeLoop, gradeGen)
+    else
+        autoGrade = false
+    end
+end)
+
+----------------------------------------------------------------
+-- TAB: Trait
+----------------------------------------------------------------
+Tabs.Trait:AddDropdown("TraitUnit", {
+    Title = "Unidade",
+    Description = "Selecione a unidade para reroll de trait",
+    Values = unitLabels,
+    Default = nil
+})
+
+Options.TraitUnit:OnChanged(function()
+    local label = Options.TraitUnit.Value
+    selectedTraitKey = labelToKey[label] or nil
+end)
+
+Tabs.Trait:AddDropdown("TraitTarget", {
+    Title = "Alvo Trait",
+    Values = TRAIT_TARGETS,
+    Default = 1
+})
+
+Options.TraitTarget:OnChanged(function()
+    local val = Options.TraitTarget.Value
+    for i, v in ipairs(TRAIT_TARGETS) do
+        if v == val then traitTargetIdx = i; break end
+    end
+end)
+
+Tabs.Trait:AddToggle("AutoTrait", {
+    Title = "Auto Trait",
+    Description = "Reroll trait (exclusivo com Auto Grade)",
+    Default = false
+})
+
+trtStatusPara = Tabs.Trait:AddParagraph({Title = "Status", Content = "desligado"})
+
+Options.AutoTrait:OnChanged(function()
+    local on = Options.AutoTrait.Value
+    if on then
+        if autoGrade then
+            Options.AutoGrade:SetValue(false)
+        end
+        autoTrait = true
+        traitGen = traitGen + 1
+        trtStatusPara:SetDesc("iniciando...")
+        task.spawn(traitLoop, traitGen)
+    else
+        autoTrait = false
+    end
+end)
+
+----------------------------------------------------------------
+-- TAB: Settings
+----------------------------------------------------------------
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"AutoCollect", "AutoGrade", "AutoTrait"})
+InterfaceManager:SetFolder("FazendaDeAnime")
+SaveManager:SetFolder("FazendaDeAnime/config")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+----------------------------------------------------------------
+-- variant collect loop
+----------------------------------------------------------------
+collectLoop = function()
+    while autoCollect do
+        local nodes = getSpawnNodes()
+        local root = getRootPart()
+        if not root then
+            colStatus:SetDesc("sem personagem")
+            task.wait(1)
+        else
+            local got = 0
+            for _, node in ipairs(nodes) do
+                if not autoCollect then break end
+                if node:GetAttribute("Occupied") == true then
+                    local v = node:GetAttribute("Variant") or "?"
+                    colStatus:SetDesc("coletando: " .. v)
+                    collecting = true
+                    teleportTo(node.Position)
+                    task.wait(0.15)
+                    collectRemote:FireServer(node)
+                    got = got + 1
+                    totalCollected = totalCollected + 1
+                    colStatus:SetDesc("coletados: " .. totalCollected)
+                    task.wait(LOOP_DELAY)
+                end
+            end
+            if got > 0 then
+                teleportTo(returnPos())
+            end
+            collecting = false
+            colStatus:SetDesc(got > 0 and ("+" .. got .. " coletados | total: " .. totalCollected) or ("aguardando... " .. #nodes .. " pontos"))
+            task.wait(0.5)
+        end
+    end
+    colStatus:SetDesc("desligado")
+end
+
+pcall(function()
+    remotes:WaitForChild("VariantTokenSpawned", 5).OnClientEvent:Connect(function(variant)
+        if not autoCollect then return end
+        colStatus:SetDesc("spawn: " .. tostring(variant))
+        task.wait(0.1)
+        local root = getRootPart()
+        if not root then return end
+        collecting = true
+        for _, node in ipairs(getSpawnNodes()) do
+            if node:GetAttribute("Occupied") == true then
+                teleportTo(node.Position)
+                task.wait(0.15)
+                collectRemote:FireServer(node)
+                totalCollected = totalCollected + 1
+                colStatus:SetDesc("coletados: " .. totalCollected)
+                break
+            end
+        end
+        task.wait(0.2)
+        teleportTo(returnPos())
+        collecting = false
+    end)
+end)
+
+----------------------------------------------------------------
+-- auto grade loop
+----------------------------------------------------------------
+gradeLoop = function(gen)
+    if not selectedGradeKey then
+        grdStatusPara:SetDesc("selecione unidade primeiro")
+        autoGrade = false
+        Options.AutoGrade:SetValue(false)
+        return
+    end
+    local root = getRootPart()
+    if not root then grdStatusPara:SetDesc("sem personagem"); return end
+    teleportTo(POS_GRADE)
+    task.wait(0.3)
+    local target = GRADE_TARGETS[gradeTargetIdx]
+    gradeRolls = 0
+    local wasCollecting = false
+    while autoGrade and gen == gradeGen do
+        if collecting then
+            wasCollecting = true
+            grdStatusPara:SetDesc("pausado (coletando)")
+            task.wait(0.3)
+        else
+            if wasCollecting then
+                wasCollecting = false
+                teleportTo(POS_GRADE)
+                task.wait(0.3)
+            end
+            local data = getPlayerData()
+            if not data or not data.PlayerUnits then
+                grdStatusPara:SetDesc("dados n/a"); break
+            end
+            local unit = data.PlayerUnits[selectedGradeKey]
+            if not unit then grdStatusPara:SetDesc("unidade removida"); break end
+            local cur = unit.PlayerUnitGrade or unit.Grade
+            if not cur then grdStatusPara:SetDesc("grade nil"); break end
+            if gradeReached(cur, target) then
+                grdStatusPara:SetDesc(cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
+                Fluent:Notify({Title = "Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
+                autoGrade = false
+                Options.AutoGrade:SetValue(false)
+                break
+            end
+            gradeRemote:FireServer(selectedGradeKey, false, cur)
+            gradeRolls = gradeRolls + 1
+            grdStatusPara:SetDesc(cur .. " -> " .. target .. " | " .. gradeRolls .. " rolls")
+            task.wait(0.8)
+        end
+    end
+    teleportTo(getBasePos())
+end
+
+----------------------------------------------------------------
+-- auto trait loop
+----------------------------------------------------------------
+traitLoop = function(gen)
+    if not selectedTraitKey then
+        trtStatusPara:SetDesc("selecione unidade primeiro")
+        autoTrait = false
+        Options.AutoTrait:SetValue(false)
+        return
+    end
+    local root = getRootPart()
+    if not root then trtStatusPara:SetDesc("sem personagem"); return end
+    teleportTo(POS_TRAIT)
+    task.wait(0.2)
+    local target = TRAIT_TARGETS[traitTargetIdx]
+    traitRolls = 0
+    local wasCollecting = false
+    while autoTrait and gen == traitGen do
+        if collecting then
+            wasCollecting = true
+            trtStatusPara:SetDesc("pausado (coletando)")
+            task.wait(0.3)
+        else
+            if wasCollecting then
+                wasCollecting = false
+                teleportTo(POS_TRAIT)
+                task.wait(0.3)
+            end
+            local data = getPlayerData()
+            if not data or not data.PlayerUnits then
+                trtStatusPara:SetDesc("dados n/a"); break
+            end
+            local unit = data.PlayerUnits[selectedTraitKey]
+            if not unit then trtStatusPara:SetDesc("unidade removida"); break end
+            local cur = unit.PlayerUnitTrait or unit.Trait
+            if not cur then trtStatusPara:SetDesc("trait nil"); break end
+            if cur == target then
+                trtStatusPara:SetDesc(cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
+                Fluent:Notify({Title = "Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
+                autoTrait = false
+                Options.AutoTrait:SetValue(false)
+                break
+            end
+            traitRemote:FireServer(selectedTraitKey, cur)
+            traitRolls = traitRolls + 1
+            trtStatusPara:SetDesc(cur .. " -> " .. target .. " | " .. traitRolls .. " rolls")
+            task.wait(0.8)
+        end
+    end
+    teleportTo(getBasePos())
+end
+
+----------------------------------------------------------------
+-- background unit refresh (every 10s)
+----------------------------------------------------------------
+task.spawn(function()
+    while task.wait(10) do
+        refreshUnits()
+        local prevGrade = selectedGradeKey and Options.GradeUnit.Value or nil
+        local prevTrait = selectedTraitKey and Options.TraitUnit.Value or nil
+        pcall(function()
+            Options.GradeUnit:SetValues(unitLabels)
+            Options.TraitUnit:SetValues(unitLabels)
+        end)
+        if prevGrade and labelToKey[prevGrade] then
+            pcall(function() Options.GradeUnit:SetValue(prevGrade) end)
+        end
+        if prevTrait and labelToKey[prevTrait] then
+            pcall(function() Options.TraitUnit:SetValue(prevTrait) end)
+        end
+    end
+end)
+
+----------------------------------------------------------------
+-- Ctrl+C toggle extra
+----------------------------------------------------------------
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.C and UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name:find("Fluent") then
+                gui.Enabled = not gui.Enabled
+                break
+            end
+        end
+    end
+end)
+
+----------------------------------------------------------------
+-- anti-afk
+----------------------------------------------------------------
+local VirtualUser = game:GetService("VirtualUser")
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+----------------------------------------------------------------
+-- init
+----------------------------------------------------------------
+Window:SelectTab(1)
+Fluent:Notify({
+    Title = "Fazenda de Anime",
+    Content = "Script carregado!",
+    Duration = 5
+})
+SaveManager:LoadAutoloadConfig()
