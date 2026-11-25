@@ -391,15 +391,9 @@ gradeLoop = function(gen)
     end
     local root = getRootPart()
     if not root then grdStatusPara:SetDesc("sem personagem"); return end
-    local data = getPlayerData()
-    if data and data.PlayerUnits then
-        local unit = data.PlayerUnits[selectedGradeKey]
-        if unit and unit.Equipped then
-            grdStatusPara:SetDesc("removendo do dropper...")
-            removeFromDropper:FireServer(selectedGradeKey)
-            task.wait(0.5)
-        end
-    end
+    grdStatusPara:SetDesc("removendo do dropper...")
+    removeFromDropper:FireServer(selectedGradeKey)
+    task.wait(0.5)
     teleportTo(POS_GRADE)
     task.wait(0.3)
     local target = GRADE_TARGETS[gradeTargetIdx]
@@ -455,15 +449,9 @@ traitLoop = function(gen)
     end
     local root = getRootPart()
     if not root then trtStatusPara:SetDesc("sem personagem"); return end
-    local data = getPlayerData()
-    if data and data.PlayerUnits then
-        local unit = data.PlayerUnits[selectedTraitKey]
-        if unit and unit.Equipped then
-            trtStatusPara:SetDesc("removendo do dropper...")
-            removeFromDropper:FireServer(selectedTraitKey)
-            task.wait(0.5)
-        end
-    end
+    trtStatusPara:SetDesc("removendo do dropper...")
+    removeFromDropper:FireServer(selectedTraitKey)
+    task.wait(0.5)
     teleportTo(POS_TRAIT)
     task.wait(0.2)
     local target = TRAIT_TARGETS[traitTargetIdx]
