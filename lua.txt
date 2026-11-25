@@ -513,8 +513,10 @@ do
         if isfile(autoPath) and readfile(autoPath) == name then
             tryDelete(autoPath)
         end
-        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+        Options.SaveManager_ConfigList:SetValues({})
         Options.SaveManager_ConfigList:SetValue(nil)
+        task.wait(0.05)
+        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
         Fluent:Notify({Title = "Config", Content = name .. " deletada", Duration = 3})
     end})
 
