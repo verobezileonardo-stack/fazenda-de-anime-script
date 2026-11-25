@@ -457,10 +457,13 @@ gradeLoop = function(gen)
         Options.AutoGrade:SetValue(false)
         return
     end
-    unequipFromDropper(selectedGradeKey, grdStatusPara)
+    if unitInfo.Equipped then
+        unequipFromDropper(selectedGradeKey, grdStatusPara)
+    end
     teleportTo(POS_GRADE)
     task.wait(0.15)
     gradeRolls = 0
+    local reachedTarget = false
     local wasCollecting = false
     while autoGrade and gen == gradeGen do
         if collecting then
@@ -482,8 +485,9 @@ gradeLoop = function(gen)
             local cur = unit.PlayerUnitGrade or unit.Grade
             if not cur then grdStatusPara:SetDesc("grade nil"); break end
             if gradeReached(cur, target) then
-                grdStatusPara:SetDesc(cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
-                Fluent:Notify({Title = "Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
+                grdStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
+                Fluent:Notify({Title = "Grade", Content = unitName .. " " .. cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
+                reachedTarget = true
                 autoGrade = false
                 Options.AutoGrade:SetValue(false)
                 break
@@ -494,9 +498,11 @@ gradeLoop = function(gen)
             task.wait(0.4)
         end
     end
-    grdStatusPara:SetDesc("equipando melhores...")
-    equipBest:FireServer()
-    task.wait(0.3)
+    if reachedTarget then
+        grdStatusPara:SetDesc("equipando melhores...")
+        equipBest:FireServer()
+        task.wait(0.3)
+    end
     teleportTo(getBasePos())
 end
 
@@ -528,10 +534,13 @@ traitLoop = function(gen)
         Options.AutoTrait:SetValue(false)
         return
     end
-    unequipFromDropper(selectedTraitKey, trtStatusPara)
+    if unitInfo.Equipped then
+        unequipFromDropper(selectedTraitKey, trtStatusPara)
+    end
     teleportTo(POS_TRAIT)
     task.wait(0.15)
     traitRolls = 0
+    local reachedTarget = false
     local wasCollecting = false
     while autoTrait and gen == traitGen do
         if collecting then
@@ -553,8 +562,9 @@ traitLoop = function(gen)
             local cur = unit.PlayerUnitTrait or unit.Trait
             if not cur then trtStatusPara:SetDesc("trait nil"); break end
             if cur == target then
-                trtStatusPara:SetDesc(cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
-                Fluent:Notify({Title = "Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
+                trtStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
+                Fluent:Notify({Title = "Trait", Content = unitName .. " " .. cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
+                reachedTarget = true
                 autoTrait = false
                 Options.AutoTrait:SetValue(false)
                 break
@@ -565,9 +575,11 @@ traitLoop = function(gen)
             task.wait(0.4)
         end
     end
-    trtStatusPara:SetDesc("equipando melhores...")
-    equipBest:FireServer()
-    task.wait(0.3)
+    if reachedTarget then
+        trtStatusPara:SetDesc("equipando melhores...")
+        equipBest:FireServer()
+        task.wait(0.3)
+    end
     teleportTo(getBasePos())
 end
 
