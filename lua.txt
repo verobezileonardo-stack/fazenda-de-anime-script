@@ -1,6 +1,7 @@
 -- Fazenda de Anime | Auto-Collect + Auto-Grade + Auto-Trait
 -- PlaceId: 81833593897486
 -- UI: Fluent by dawid-scripts
+warn("[VER] v3-hitbox")
 
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
@@ -92,8 +93,13 @@ local TRAIT_TARGETS = {"Assassin","Berserk","Midas","Emperor","Phoenix","Angelic
 local gradeTargetIdx, traitTargetIdx = 1, 1
 local selectedGradeKey, selectedTraitKey = nil, nil
 
-local POS_GRADE = Vector3.new(-1778.7, 6.5, 27.8)
-local POS_TRAIT = Vector3.new(-1810.7, 6.5, 28.3)
+local function getHitboxPos(tag)
+    local parts = CollectionService:GetTagged(tag)
+    if parts and #parts > 0 then
+        return parts[1].Position
+    end
+    return nil
+end
 local crateThreshold = "80 QN"
 local useCashPotion = true
 
@@ -238,8 +244,8 @@ local function refreshUnits()
 end
 
 local function returnPos()
-    if autoGrade then return POS_GRADE end
-    if autoTrait then return POS_TRAIT end
+    if autoGrade then return getHitboxPos("GradingHitbox") end
+    if autoTrait then return getHitboxPos("TraitsHitbox") end
     return getBasePos()
 end
 
@@ -790,9 +796,17 @@ gradeLoop = function(gen)
     if unitInfo.Equipped then
         unequipFromDropper(selectedGradeKey, grdStatusPara)
     end
-    teleportTo(POS_GRADE)
+    local gradeHitboxPos = getHitboxPos("GradingHitbox")
+    if not gradeHitboxPos then
+        grdStatusPara:SetDesc("hitbox GradingHitbox nao encontrado")
+        warn("[DEBUG] gradeLoop: GradingHitbox tag nao encontrado no mapa")
+        autoGrade = false; Options.AutoGrade:SetValue(false); return
+    end
+    warn("[DEBUG] gradeLoop: hitbox pos=" .. tostring(gradeHitboxPos))
+    teleportTo(gradeHitboxPos)
     task.wait(0.15)
     gradeRolls = 0
+    local gradeConfirmed = 0
     local reachedTarget = false
     local wasCollecting = false
     warn("[DEBUG] gradeLoop: while entry autoGrade=" .. tostring(autoGrade) .. " gen=" .. tostring(gen) .. " gradeGen=" .. tostring(gradeGen))
@@ -804,7 +818,7 @@ gradeLoop = function(gen)
         else
             if wasCollecting then
                 wasCollecting = false
-                teleportTo(POS_GRADE)
+                teleportTo(gradeHitboxPos)
                 task.wait(0.15)
             end
             local d = getPlayerData()
@@ -814,6 +828,13 @@ gradeLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then warn("[DEBUG] gradeLoop: BREAK unidade removida key=" .. tostring(selectedGradeKey)); grdStatusPara:SetDesc("unidade removida"); break end
+            if unit.Equipped then
+                warn("[DEBUG] gradeLoop: unidade re-equipada, removendo")
+                unequipFromDropper(selectedGradeKey, grdStatusPara)
+                task.wait(0.3)
+                teleportTo(gradeHitboxPos)
+                task.wait(0.15)
+            end
             local rawGrade = unit.Grade
             local cur = rawGrade or "F"
             if gradeReached(cur, target) then
@@ -824,11 +845,20 @@ gradeLoop = function(gen)
                 Options.AutoGrade:SetValue(false)
                 break
             end
-            if gradeRolls % 25 == 0 then warn("[DEBUG] gradeLoop: roll=" .. gradeRolls .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawGrade)) end
+            local root = getRootPart()
+            if root and gradeHitboxPos then
+                local dist = (root.Position - gradeHitboxPos).Magnitude
+                if dist > 25 then
+                    warn("[DEBUG] gradeLoop: FORA DO ALCANCE dist=" .. string.format("%.1f", dist) .. " re-tp")
+                    teleportTo(gradeHitboxPos)
+                    task.wait(0.15)
+                end
+            end
+            if gradeRolls % 10 == 0 then warn("[DEBUG] gradeLoop: roll=" .. gradeRolls .. " ok=" .. gradeConfirmed .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawGrade)) end
             gradeRemote:FireServer(selectedGradeKey, false, rawGrade)
             gradeRolls = gradeRolls + 1
             grdStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. gradeRolls)
-            task.wait(1.5)
+            task.wait(1.0)
         end
     end
     if reachedTarget then
@@ -871,7 +901,14 @@ traitLoop = function(gen)
     if unitInfo.Equipped then
         unequipFromDropper(selectedTraitKey, trtStatusPara)
     end
-    teleportTo(POS_TRAIT)
+    local traitHitboxPos = getHitboxPos("TraitsHitbox")
+    if not traitHitboxPos then
+        trtStatusPara:SetDesc("hitbox TraitsHitbox nao encontrado")
+        warn("[DEBUG] traitLoop: TraitsHitbox tag nao encontrado no mapa")
+        autoTrait = false; Options.AutoTrait:SetValue(false); return
+    end
+    warn("[DEBUG] traitLoop: hitbox pos=" .. tostring(traitHitboxPos))
+    teleportTo(traitHitboxPos)
     task.wait(0.15)
     traitRolls = 0
     local reachedTarget = false
@@ -885,7 +922,7 @@ traitLoop = function(gen)
         else
             if wasCollecting then
                 wasCollecting = false
-                teleportTo(POS_TRAIT)
+                teleportTo(traitHitboxPos)
                 task.wait(0.15)
             end
             local d = getPlayerData()
@@ -895,6 +932,13 @@ traitLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then warn("[DEBUG] traitLoop: BREAK unidade removida key=" .. tostring(selectedTraitKey)); trtStatusPara:SetDesc("unidade removida"); break end
+            if unit.Equipped then
+                warn("[DEBUG] traitLoop: unidade re-equipada, removendo")
+                unequipFromDropper(selectedTraitKey, trtStatusPara)
+                task.wait(0.3)
+                teleportTo(traitHitboxPos)
+                task.wait(0.15)
+            end
             local rawTrait = unit.Trait
             local cur = rawTrait or "Normal"
             if cur == target then
@@ -905,11 +949,20 @@ traitLoop = function(gen)
                 Options.AutoTrait:SetValue(false)
                 break
             end
-            if traitRolls % 25 == 0 then warn("[DEBUG] traitLoop: roll=" .. traitRolls .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawTrait)) end
+            local root = getRootPart()
+            if root and traitHitboxPos then
+                local dist = (root.Position - traitHitboxPos).Magnitude
+                if dist > 25 then
+                    warn("[DEBUG] traitLoop: FORA DO ALCANCE dist=" .. string.format("%.1f", dist) .. " re-tp")
+                    teleportTo(traitHitboxPos)
+                    task.wait(0.15)
+                end
+            end
+            if traitRolls % 10 == 0 then warn("[DEBUG] traitLoop: roll=" .. traitRolls .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawTrait)) end
             traitRemote:FireServer(selectedTraitKey, rawTrait)
             traitRolls = traitRolls + 1
             trtStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. traitRolls)
-            task.wait(1.5)
+            task.wait(1.0)
         end
     end
     if reachedTarget then
