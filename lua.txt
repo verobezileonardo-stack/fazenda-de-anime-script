@@ -136,8 +136,8 @@ local function refreshUnits()
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
         if not name or name == "" then continue end
-        local grade = unit.PlayerUnitGrade or unit.Grade or "F"
-        local trait = unit.PlayerUnitTrait or unit.Trait or "-"
+        local grade = unit.Grade or "F"
+        local trait = unit.Trait or "-"
         local eq = unit.Equipped and " *" or ""
         table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, eq = eq})
     end
@@ -189,40 +189,47 @@ end
 
 local function findDropperWithUnit(inventoryKey)
     local data = getPlayerData()
-    if not data or not data.PlayerUnits then return nil end
+    if not data or not data.PlayerUnits then return nil, "sem dados" end
     local unit = data.PlayerUnits[inventoryKey]
-    if not unit then return nil end
+    if not unit then return nil, "key invalida" end
     local plot = getPlayerPlot()
-    if not plot then return nil end
+    if not plot then return nil, "sem plot" end
     local uName = unit.PlayerUnitName
-    local uGrade = unit.PlayerUnitGrade or unit.Grade
-    local uTrait = unit.PlayerUnitTrait or unit.Trait
+    local uGrade = tostring(unit.Grade or "F")
+    local uTrait = tostring(unit.Trait or "")
+    local uLevel = tostring(unit.Level or 1)
+    local uVariant = tostring(unit.Variant or "Normal")
     local best, bestScore = nil, -1
+    local candidates = 0
     for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
         if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
             if part:GetAttribute("PlayerUnitName") == uName then
-                local score = 1
-                local dGrade = part:GetAttribute("PlayerUnitGrade")
-                local dTrait = part:GetAttribute("PlayerUnitTrait")
-                if tostring(dGrade) == tostring(uGrade) then score = score + 2 end
-                if tostring(dTrait) == tostring(uTrait) then score = score + 2 end
+                candidates = candidates + 1
+                local score = 0
+                if tostring(part:GetAttribute("PlayerUnitGrade") or "F") == uGrade then score = score + 2 end
+                if tostring(part:GetAttribute("PlayerUnitTrait") or "") == uTrait then score = score + 2 end
+                if tostring(part:GetAttribute("PlayerUnitLevel") or 1) == uLevel then score = score + 2 end
+                if tostring(part:GetAttribute("PlayerUnitVariant") or "Normal") == uVariant then score = score + 1 end
                 if score > bestScore then
                     best, bestScore = part, score
                 end
             end
         end
     end
-    return best
+    if not best then return nil, uName .. " nao encontrado em " .. candidates .. " droppers" end
+    return best, uName .. " score=" .. bestScore .. "/7 (" .. candidates .. ")"
 end
 
 local function unequipFromDropper(inventoryKey, statusPara)
-    local dropper = findDropperWithUnit(inventoryKey)
+    local dropper, info = findDropperWithUnit(inventoryKey)
     if dropper then
-        statusPara:SetDesc("removendo do dropper...")
+        statusPara:SetDesc("removendo: " .. info)
         removeFromDropper:FireServer(dropper)
         task.wait(0.5)
         return true
     end
+    statusPara:SetDesc("skip unequip: " .. info)
+    task.wait(0.3)
     return false
 end
 
@@ -448,7 +455,7 @@ gradeLoop = function(gen)
     end
     local unitInfo = data.PlayerUnits[selectedGradeKey]
     local unitName = unitInfo.PlayerUnitName or "?"
-    local cur = unitInfo.PlayerUnitGrade or unitInfo.Grade
+    local cur = unitInfo.Grade
     grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] -> " .. target)
     if cur and gradeReached(cur, target) then
         grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] ja no alvo!")
@@ -482,7 +489,7 @@ gradeLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then grdStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.PlayerUnitGrade or unit.Grade
+            local cur = unit.Grade
             if not cur then grdStatusPara:SetDesc("grade nil"); break end
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
@@ -525,7 +532,7 @@ traitLoop = function(gen)
     end
     local unitInfo = data.PlayerUnits[selectedTraitKey]
     local unitName = unitInfo.PlayerUnitName or "?"
-    local cur = unitInfo.PlayerUnitTrait or unitInfo.Trait
+    local cur = unitInfo.Trait
     trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") -> " .. target)
     if cur and cur == target then
         trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") ja no alvo!")
@@ -559,7 +566,7 @@ traitLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then trtStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.PlayerUnitTrait or unit.Trait
+            local cur = unit.Trait
             if not cur then trtStatusPara:SetDesc("trait nil"); break end
             if cur == target then
                 trtStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
