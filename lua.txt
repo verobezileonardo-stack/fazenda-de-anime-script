@@ -141,7 +141,12 @@ local function refreshUnits()
         local eq = unit.Equipped and " *" or ""
         table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, eq = eq})
     end
-    table.sort(sorted, function(a,b) return a.name < b.name end)
+    table.sort(sorted, function(a,b)
+        if a.name ~= b.name then return a.name < b.name end
+        if a.grade ~= b.grade then return a.grade < b.grade end
+        if a.trait ~= b.trait then return a.trait < b.trait end
+        return a.key < b.key
+    end)
     for _, u in ipairs(sorted) do
         local base = u.name .. " [" .. u.grade .. "] (" .. u.trait .. ")" .. u.eq
         local label = base
