@@ -199,15 +199,9 @@ local function refreshUnits()
     traitLabels, traitLabelToKey = {}, {}
     if not data or not data.PlayerUnits then warn("[DEBUG] refreshUnits: sem dados"); return end
     local sorted = {}
-    local dumpedOnce = false
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
         if not name or name == "" then continue end
-        if not dumpedOnce then
-            dumpedOnce = true
-            local kv = {}; for k, v in pairs(unit) do table.insert(kv, k .. "=" .. tostring(v)) end
-            warn("[DEBUG] refreshUnits: SAMPLE UNIT KEYS: " .. table.concat(kv, " | "))
-        end
         table.insert(sorted, {
             key = key, name = name,
             grade = unit.Grade, trait = unit.Trait,
@@ -784,9 +778,9 @@ gradeLoop = function(gen)
     end
     local unitInfo = data.PlayerUnits[selectedGradeKey]
     local unitName = unitInfo.PlayerUnitName or "?"
-    local cur = unitInfo.Grade
-    grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] -> " .. target)
-    if cur and gradeReached(cur, target) then
+    local cur = unitInfo.Grade or "F"
+    grdStatusPara:SetDesc(unitName .. " [" .. cur .. "] -> " .. target)
+    if gradeReached(cur, target) then
         grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] ja no alvo!")
         Fluent:Notify({Title = "Grade", Content = unitName .. " " .. tostring(cur) .. " ja esta no alvo!", Duration = 3})
         autoGrade = false
@@ -820,12 +814,7 @@ gradeLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then warn("[DEBUG] gradeLoop: BREAK unidade removida key=" .. tostring(selectedGradeKey)); grdStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.Grade
-            if not cur then
-                local keys = {}; for k,v in pairs(unit) do table.insert(keys, k .. "=" .. tostring(v)) end
-                warn("[DEBUG] gradeLoop: BREAK grade nil | unit keys: " .. table.concat(keys, ", "))
-                grdStatusPara:SetDesc("grade nil"); break
-            end
+            local cur = unit.Grade or "F"
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
                 Fluent:Notify({Title = "Grade", Content = unitName .. " " .. cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
@@ -869,9 +858,9 @@ traitLoop = function(gen)
     end
     local unitInfo = data.PlayerUnits[selectedTraitKey]
     local unitName = unitInfo.PlayerUnitName or "?"
-    local cur = unitInfo.Trait
-    trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") -> " .. target)
-    if cur and cur == target then
+    local cur = unitInfo.Trait or "Normal"
+    trtStatusPara:SetDesc(unitName .. " (" .. cur .. ") -> " .. target)
+    if cur == target then
         trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") ja no alvo!")
         Fluent:Notify({Title = "Trait", Content = unitName .. " " .. tostring(cur) .. " ja esta no alvo!", Duration = 3})
         autoTrait = false
@@ -905,12 +894,7 @@ traitLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then warn("[DEBUG] traitLoop: BREAK unidade removida key=" .. tostring(selectedTraitKey)); trtStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.Trait
-            if not cur then
-                local keys = {}; for k,v in pairs(unit) do table.insert(keys, k .. "=" .. tostring(v)) end
-                warn("[DEBUG] traitLoop: BREAK trait nil | unit keys: " .. table.concat(keys, ", "))
-                trtStatusPara:SetDesc("trait nil"); break
-            end
+            local cur = unit.Trait or "Normal"
             if cur == target then
                 trtStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
                 Fluent:Notify({Title = "Trait", Content = unitName .. " " .. cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
