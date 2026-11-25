@@ -471,8 +471,13 @@ do
     local function refreshDropdown(selectName)
         local list = SaveManager:RefreshConfigList()
         local dd = Options.SaveManager_ConfigList
-        dd:SetValues(list)
-        dd:SetValue(selectName)
+        dd.Values = list
+        if selectName and table.find(list, selectName) then
+            dd.Value = selectName
+        else
+            dd.Value = nil
+        end
+        dd:BuildDropdownList()
         dd:Display()
     end
 
