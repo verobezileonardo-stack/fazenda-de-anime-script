@@ -17,10 +17,10 @@ local Window = Fluent:CreateWindow({
 })
 
 local Tabs = {
-    Coletor = Window:AddTab({Title = "Coletor", Icon = "gem"}),
-    Grade = Window:AddTab({Title = "Grade", Icon = "arrow-up-circle"}),
-    Trait = Window:AddTab({Title = "Trait", Icon = "star"}),
-    Settings = Window:AddTab({Title = "Settings", Icon = "settings"})
+    Coletor = Window:AddTab({Title = "Coletor"}),
+    Grade = Window:AddTab({Title = "Grade"}),
+    Trait = Window:AddTab({Title = "Trait"}),
+    Settings = Window:AddTab({Title = "Settings"})
 }
 
 local Options = Fluent.Options
