@@ -199,9 +199,15 @@ local function refreshUnits()
     traitLabels, traitLabelToKey = {}, {}
     if not data or not data.PlayerUnits then warn("[DEBUG] refreshUnits: sem dados"); return end
     local sorted = {}
+    local dumpedOnce = false
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
         if not name or name == "" then continue end
+        if not dumpedOnce then
+            dumpedOnce = true
+            local kv = {}; for k, v in pairs(unit) do table.insert(kv, k .. "=" .. tostring(v)) end
+            warn("[DEBUG] refreshUnits: SAMPLE UNIT KEYS: " .. table.concat(kv, " | "))
+        end
         table.insert(sorted, {
             key = key, name = name,
             grade = unit.Grade, trait = unit.Trait,
