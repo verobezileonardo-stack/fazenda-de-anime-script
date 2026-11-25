@@ -428,11 +428,35 @@ end)
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({"AutoCollect", "AutoGrade", "AutoTrait"})
 InterfaceManager:SetFolder("FazendaDeAnime")
 SaveManager:SetFolder("FazendaDeAnime/config")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
+
+do
+    local cfgSection = Tabs.Settings:AddSection("Gerenciar")
+    cfgSection:AddButton({
+        Title = "Deletar config",
+        Description = "Remove a config selecionada",
+        Callback = function()
+            local name = Options.SaveManager_ConfigList.Value
+            if not name then
+                return Fluent:Notify({Title = "Config", Content = "Selecione uma config primeiro", Duration = 3})
+            end
+            local path = SaveManager.Folder .. "/settings/" .. name .. ".json"
+            if not isfile(path) then return end
+            local ok = pcall(delfile, path)
+            if not ok then pcall(writefile, path, "") end
+            local autoPath = SaveManager.Folder .. "/settings/autoload.txt"
+            if isfile(autoPath) and readfile(autoPath) == name then
+                pcall(delfile, autoPath)
+            end
+            Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+            Options.SaveManager_ConfigList:SetValue(nil)
+            Fluent:Notify({Title = "Config", Content = name .. " deletada", Duration = 3})
+        end
+    })
+end
 
 ----------------------------------------------------------------
 -- variant collect loop
