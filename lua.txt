@@ -130,9 +130,9 @@ local function buildLabel(u, mode)
     local parts = {u.name}
     if u.variant ~= "Normal" then table.insert(parts, u.variant) end
     if mode == "grade" then
-        if u.grade then table.insert(parts, "| " .. u.grade) end
+        table.insert(parts, "| " .. (u.grade or "Vazio"))
     else
-        if u.trait then table.insert(parts, "| " .. u.trait) end
+        table.insert(parts, "| " .. (u.trait or "Vazio"))
     end
     return table.concat(parts, " ") .. u.eq
 end
