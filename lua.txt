@@ -138,17 +138,22 @@ local function refreshUnits()
         if not name or name == "" then continue end
         local grade = unit.Grade or "F"
         local trait = unit.Trait or "-"
-        local eq = unit.Equipped and " *" or ""
-        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, eq = eq})
+        local level = unit.Level or 1
+        local variant = unit.Variant or "Normal"
+        local eq = unit.Equipped and " [E]" or ""
+        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, level = level, variant = variant, eq = eq})
     end
     table.sort(sorted, function(a,b)
         if a.name ~= b.name then return a.name < b.name end
-        if a.grade ~= b.grade then return a.grade < b.grade end
+        if a.variant ~= b.variant then return a.variant < b.variant end
+        if a.grade ~= b.grade then return (GRADE_ORDER[a.grade] or 0) < (GRADE_ORDER[b.grade] or 0) end
         if a.trait ~= b.trait then return a.trait < b.trait end
+        if a.level ~= b.level then return a.level < b.level end
         return a.key < b.key
     end)
     for _, u in ipairs(sorted) do
-        local base = u.name .. " [" .. u.grade .. "] (" .. u.trait .. ")" .. u.eq
+        local vTag = u.variant ~= "Normal" and " " .. u.variant or ""
+        local base = u.name .. vTag .. " Lv" .. u.level .. " " .. u.grade .. " | " .. u.trait .. u.eq
         local label = base
         local n = 1
         while seen[label] do
@@ -187,49 +192,61 @@ local function getPlayerPlot()
     return plots and plots:FindFirstChild(player.Name)
 end
 
-local function findDropperWithUnit(inventoryKey)
+local function findDropperCandidates(inventoryKey)
     local data = getPlayerData()
-    if not data or not data.PlayerUnits then return nil, "sem dados" end
+    if not data or not data.PlayerUnits then return {}, "sem dados" end
     local unit = data.PlayerUnits[inventoryKey]
-    if not unit then return nil, "key invalida" end
+    if not unit then return {}, "key invalida" end
     local plot = getPlayerPlot()
-    if not plot then return nil, "sem plot" end
+    if not plot then return {}, "sem plot" end
     local uName = unit.PlayerUnitName
     local uGrade = tostring(unit.Grade or "F")
     local uTrait = tostring(unit.Trait or "")
     local uLevel = tostring(unit.Level or 1)
     local uVariant = tostring(unit.Variant or "Normal")
-    local best, bestScore = nil, -1
-    local candidates = 0
+    local ranked = {}
     for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
         if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
             if part:GetAttribute("PlayerUnitName") == uName then
-                candidates = candidates + 1
                 local score = 0
-                if tostring(part:GetAttribute("PlayerUnitGrade") or "F") == uGrade then score = score + 2 end
-                if tostring(part:GetAttribute("PlayerUnitTrait") or "") == uTrait then score = score + 2 end
-                if tostring(part:GetAttribute("PlayerUnitLevel") or 1) == uLevel then score = score + 2 end
-                if tostring(part:GetAttribute("PlayerUnitVariant") or "Normal") == uVariant then score = score + 1 end
-                if score > bestScore then
-                    best, bestScore = part, score
-                end
+                local dGrade = tostring(part:GetAttribute("PlayerUnitGrade") or "F")
+                local dTrait = tostring(part:GetAttribute("PlayerUnitTrait") or "")
+                local dLevel = tostring(part:GetAttribute("PlayerUnitLevel") or 1)
+                local dVariant = tostring(part:GetAttribute("PlayerUnitVariant") or "Normal")
+                if dVariant == uVariant then score = score + 4 end
+                if dGrade == uGrade then score = score + 3 end
+                if dTrait == uTrait then score = score + 2 end
+                if dLevel == uLevel then score = score + 1 end
+                table.insert(ranked, {part = part, score = score, tag = dVariant .. " Lv" .. dLevel .. " " .. dGrade .. " " .. dTrait})
             end
         end
     end
-    if not best then return nil, uName .. " nao encontrado em " .. candidates .. " droppers" end
-    return best, uName .. " score=" .. bestScore .. "/7 (" .. candidates .. ")"
+    table.sort(ranked, function(a, b) return a.score > b.score end)
+    local info = uName .. " " .. uVariant .. " Lv" .. uLevel .. " " .. uGrade .. " " .. uTrait .. " | " .. #ranked .. " candidatos"
+    return ranked, info
 end
 
 local function unequipFromDropper(inventoryKey, statusPara)
-    local dropper, info = findDropperWithUnit(inventoryKey)
-    if dropper then
-        statusPara:SetDesc("removendo: " .. info)
-        removeFromDropper:FireServer(dropper)
-        task.wait(0.5)
-        return true
+    local ranked, info = findDropperCandidates(inventoryKey)
+    if #ranked == 0 then
+        statusPara:SetDesc("skip: " .. info)
+        task.wait(0.3)
+        return false
     end
-    statusPara:SetDesc("skip unequip: " .. info)
-    task.wait(0.3)
+    for i, cand in ipairs(ranked) do
+        statusPara:SetDesc("remove #" .. i .. "/" .. #ranked .. " s=" .. cand.score .. "/10 " .. cand.tag)
+        removeFromDropper:FireServer(cand.part)
+        task.wait(0.5)
+        local d = getPlayerData()
+        if d and d.PlayerUnits then
+            local u = d.PlayerUnits[inventoryKey]
+            if u and not u.Equipped then
+                statusPara:SetDesc("ok: removido em " .. i .. " tentativa(s)")
+                return true
+            end
+        end
+    end
+    statusPara:SetDesc("falhou: " .. #ranked .. " tentativas, ainda equipado")
     return false
 end
 
