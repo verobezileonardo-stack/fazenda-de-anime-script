@@ -815,7 +815,11 @@ gradeLoop = function(gen)
             local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then warn("[DEBUG] gradeLoop: BREAK unidade removida key=" .. tostring(selectedGradeKey)); grdStatusPara:SetDesc("unidade removida"); break end
             local cur = unit.Grade
-            if not cur then warn("[DEBUG] gradeLoop: BREAK grade nil"); grdStatusPara:SetDesc("grade nil"); break end
+            if not cur then
+                local keys = {}; for k,v in pairs(unit) do table.insert(keys, k .. "=" .. tostring(v)) end
+                warn("[DEBUG] gradeLoop: BREAK grade nil | unit keys: " .. table.concat(keys, ", "))
+                grdStatusPara:SetDesc("grade nil"); break
+            end
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
                 Fluent:Notify({Title = "Grade", Content = unitName .. " " .. cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
@@ -896,7 +900,11 @@ traitLoop = function(gen)
             local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then warn("[DEBUG] traitLoop: BREAK unidade removida key=" .. tostring(selectedTraitKey)); trtStatusPara:SetDesc("unidade removida"); break end
             local cur = unit.Trait
-            if not cur then warn("[DEBUG] traitLoop: BREAK trait nil"); trtStatusPara:SetDesc("trait nil"); break end
+            if not cur then
+                local keys = {}; for k,v in pairs(unit) do table.insert(keys, k .. "=" .. tostring(v)) end
+                warn("[DEBUG] traitLoop: BREAK trait nil | unit keys: " .. table.concat(keys, ", "))
+                trtStatusPara:SetDesc("trait nil"); break
+            end
             if cur == target then
                 trtStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
                 Fluent:Notify({Title = "Trait", Content = unitName .. " " .. cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
