@@ -470,9 +470,18 @@ do
 
     local function refreshDropdown(selectName)
         local list = SaveManager:RefreshConfigList()
-        Options.SaveManager_ConfigList:SetValues(list)
-        task.wait(0.05)
-        Options.SaveManager_ConfigList:SetValue(selectName)
+        local dd = Options.SaveManager_ConfigList
+        if selectName then
+            dd:SetValues(list)
+            task.wait(0.05)
+            dd:SetValue(selectName)
+        else
+            dd:SetValues({"--"})
+            dd:SetValue("--")
+            task.wait(0.05)
+            dd:SetValues(list)
+            dd:SetValue(nil)
+        end
     end
 
     section:AddButton({Title = "Create config", Callback = function()
