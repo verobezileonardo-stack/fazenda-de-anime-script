@@ -709,13 +709,19 @@ pcall(function()
 end)
 
 task.spawn(function()
+    local vui = game:GetService("VirtualInputManager")
     while task.wait(45) do
         local root = getRootPart()
         if not root then continue end
-        local hum = root.Parent and root.Parent:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Jump = true
-        end
+        pcall(function()
+            vui:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.1)
+            vui:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        end)
+        pcall(function()
+            local hum = root.Parent and root.Parent:FindFirstChildOfClass("Humanoid")
+            if hum then hum:Move(Vector3.new(0, 0, -1)); task.wait(0.15); hum:Move(Vector3.zero) end
+        end)
     end
 end)
 
