@@ -458,6 +458,15 @@ do
     section:AddInput("SaveManager_ConfigName", {Title = "Config name"})
     section:AddDropdown("SaveManager_ConfigList", {Title = "Config list", Values = SaveManager:RefreshConfigList(), AllowNull = true})
 
+    do
+        local dd = Options.SaveManager_ConfigList
+        local origOpen = dd.Open
+        dd.Open = function(self)
+            if #self.Values == 0 then return end
+            return origOpen(self)
+        end
+    end
+
     local function nukeFile(path)
         for _, fn in ipairs({delfile, rmfile}) do
             if type(fn) == "function" then
