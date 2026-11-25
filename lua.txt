@@ -176,6 +176,49 @@ local function getSpawnNodes()
     return nodes or {}
 end
 
+local function getPlayerPlot()
+    local map = workspace:FindFirstChild("Map")
+    local plots = map and map:FindFirstChild("PlotModels")
+    return plots and plots:FindFirstChild(player.Name)
+end
+
+local function findDropperWithUnit(inventoryKey)
+    local data = getPlayerData()
+    if not data or not data.PlayerUnits then return nil end
+    local unit = data.PlayerUnits[inventoryKey]
+    if not unit then return nil end
+    local unitName = unit.PlayerUnitName
+    local plot = getPlayerPlot()
+    for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
+        if part:GetAttribute("Type") == "PlayerUnit" then
+            if plot and part:IsDescendantOf(plot) then
+                if part:GetAttribute("PlayerUnitName") == unitName then
+                    return part
+                end
+            end
+        end
+    end
+    if plot then
+        for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
+            if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
+                return part
+            end
+        end
+    end
+    return nil
+end
+
+local function unequipFromDropper(inventoryKey, statusPara)
+    local dropper = findDropperWithUnit(inventoryKey)
+    if dropper then
+        statusPara:SetDesc("removendo do dropper...")
+        removeFromDropper:FireServer(dropper)
+        task.wait(0.5)
+        return true
+    end
+    return false
+end
+
 ----------------------------------------------------------------
 -- forward declarations
 ----------------------------------------------------------------
@@ -391,9 +434,7 @@ gradeLoop = function(gen)
     end
     local root = getRootPart()
     if not root then grdStatusPara:SetDesc("sem personagem"); return end
-    grdStatusPara:SetDesc("removendo do dropper...")
-    removeFromDropper:FireServer(selectedGradeKey)
-    task.wait(0.5)
+    unequipFromDropper(selectedGradeKey, grdStatusPara)
     teleportTo(POS_GRADE)
     task.wait(0.3)
     local target = GRADE_TARGETS[gradeTargetIdx]
@@ -449,9 +490,7 @@ traitLoop = function(gen)
     end
     local root = getRootPart()
     if not root then trtStatusPara:SetDesc("sem personagem"); return end
-    trtStatusPara:SetDesc("removendo do dropper...")
-    removeFromDropper:FireServer(selectedTraitKey)
-    task.wait(0.5)
+    unequipFromDropper(selectedTraitKey, trtStatusPara)
     teleportTo(POS_TRAIT)
     task.wait(0.2)
     local target = TRAIT_TARGETS[traitTargetIdx]
