@@ -828,7 +828,7 @@ gradeLoop = function(gen)
             gradeRemote:FireServer(selectedGradeKey, false, rawGrade)
             gradeRolls = gradeRolls + 1
             grdStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. gradeRolls)
-            task.wait(0.4)
+            task.wait(3)
         end
     end
     if reachedTarget then
@@ -909,7 +909,7 @@ traitLoop = function(gen)
             traitRemote:FireServer(selectedTraitKey, rawTrait)
             traitRolls = traitRolls + 1
             trtStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. traitRolls)
-            task.wait(0.4)
+            task.wait(3)
         end
     end
     if reachedTarget then
