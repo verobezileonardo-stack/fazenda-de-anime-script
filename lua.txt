@@ -20,6 +20,7 @@ local Tabs = {
     Coletor = Window:AddTab({Title = "Coletor"}),
     Grade = Window:AddTab({Title = "Grade"}),
     Trait = Window:AddTab({Title = "Trait"}),
+    Crate = Window:AddTab({Title = "Crate"}),
     Settings = Window:AddTab({Title = "Settings"})
 }
 
@@ -39,6 +40,20 @@ local gradeRemote = remotes:WaitForChild("NewRerollPlayerUnitGrade")
 local traitRemote = remotes:WaitForChild("RerollPlayerUnitTrait")
 local removeFromDropper = remotes:WaitForChild("RemovePlayerUnitFromDropper")
 local equipBest = remotes:WaitForChild("EquipBestPlayerUnits")
+local pickupCrateRemote = remotes:WaitForChild("PickupCrateBox", 5)
+local depositCrateRemote = remotes:WaitForChild("DepositCrate", 5)
+local collectPolishedRemote = remotes:WaitForChild("CollectPolisherCrate", 5)
+local sellCrateRemote = remotes:WaitForChild("SellCrate", 5)
+local useItemRemote = remotes:WaitForChild("UseItem", 5)
+do
+    local missing = {}
+    if not pickupCrateRemote then table.insert(missing, "PickupCrateBox") end
+    if not depositCrateRemote then table.insert(missing, "DepositCrate") end
+    if not collectPolishedRemote then table.insert(missing, "CollectPolisherCrate") end
+    if not sellCrateRemote then table.insert(missing, "SellCrate") end
+    if not useItemRemote then table.insert(missing, "UseItem") end
+    if #missing > 0 then warn("[DEBUG] CRATE REMOTES MISSING: " .. table.concat(missing, ", ")) end
+end
 
 ----------------------------------------------------------------
 -- player data via Replica
@@ -49,6 +64,11 @@ do
     pcall(function()
         CDM = require(ReplicatedStorage:WaitForChild("Client",5):WaitForChild("Data",5):WaitForChild("ClientDataManager",5))
     end)
+    if CDM then
+        warn("[DEBUG] ClientDataManager: carregado OK")
+    else
+        warn("[DEBUG] ClientDataManager: FALHOU - dados indisponiveis")
+    end
     getPlayerData = CDM and function()
         local ok, d = pcall(CDM.GetData)
         return ok and d or nil
@@ -58,13 +78,14 @@ end
 ----------------------------------------------------------------
 -- state
 ----------------------------------------------------------------
-local autoCollect, autoGrade, autoTrait = false, false, false
+local autoCollect, autoGrade, autoTrait, autoCrate = false, false, false, false
 local configLoading = false
 local collecting = false
 local cachedBasePos
 local totalCollected, gradeRolls, traitRolls = 0, 0, 0
 local LOOP_DELAY = 0.3
-local gradeGen, traitGen = 0, 0
+local gradeGen, traitGen, crateGen = 0, 0, 0
+local crateBusy = false
 local GRADE_ORDER = {F=1,E=2,D=3,C=4,B=5,A=6,S=7,SS=8,X=9,EX=10,UR=11}
 local GRADE_TARGETS = {"S","SS","X","EX","UR"}
 local TRAIT_TARGETS = {"Assassin","Berserk","Midas","Emperor","Phoenix","Angelic","Sovereign"}
@@ -73,6 +94,29 @@ local selectedGradeKey, selectedTraitKey = nil, nil
 
 local POS_GRADE = Vector3.new(-1778.7, 6.5, 27.8)
 local POS_TRAIT = Vector3.new(-1810.7, 6.5, 28.3)
+local crateThreshold = "80 QN"
+local useCashPotion = true
+
+local SUFFIX_RANK = {
+    [""] = 0, K = 1, M = 2, B = 3, T = 4,
+    QA = 5, QN = 6, SX = 7, SP = 8, OC = 9, NO = 10, DC = 11
+}
+
+local function parseCashParts(str)
+    if not str then return 0, "" end
+    str = str:gsub("%$", ""):gsub(",", "."):match("^%s*(.-)%s*$")
+    local num, suffix = str:match("^([%d%.]+)%s*(%a*)$")
+    return tonumber(num) or 0, (suffix or ""):upper()
+end
+
+local function cashGTE(display, threshold)
+    local dNum, dSuf = parseCashParts(display)
+    local tNum, tSuf = parseCashParts(threshold)
+    local dRank = SUFFIX_RANK[dSuf] or -1
+    local tRank = SUFFIX_RANK[tSuf] or -1
+    if dRank ~= tRank then return dRank > tRank end
+    return dNum >= tNum
+end
 
 local gradeLabels, gradeLabelToKey = {}, {}
 local traitLabels, traitLabelToKey = {}, {}
@@ -80,17 +124,24 @@ local traitLabels, traitLabelToKey = {}, {}
 ----------------------------------------------------------------
 -- helpers
 ----------------------------------------------------------------
+local _rootWarnTick = 0
 local function getRootPart()
     local ch = player.Character
-    return ch and ch:FindFirstChild("HumanoidRootPart")
+    local root = ch and ch:FindFirstChild("HumanoidRootPart")
+    if not root and tick() - _rootWarnTick > 10 then
+        _rootWarnTick = tick()
+        warn("[DEBUG] getRootPart: nil | char=" .. tostring(ch ~= nil))
+    end
+    return root
 end
 
 local function getBasePos()
     if cachedBasePos then return cachedBasePos end
+    warn("[DEBUG] getBasePos: calculando pela primeira vez")
     local map = workspace:FindFirstChild("Map")
     local plots = map and map:FindFirstChild("PlotModels")
     local plot = plots and plots:FindFirstChild(player.Name)
-    if not plot then return nil end
+    if not plot then warn("[DEBUG] getBasePos: plot nil"); return nil end
     local refPos
     for _, part in ipairs(CollectionService:GetTagged("ConveyorCollectPart")) do
         if part:IsDescendantOf(plot) then refPos = part.Position; break end
@@ -103,21 +154,25 @@ local function getBasePos()
         end
     end
     if refPos then
+        warn("[DEBUG] getBasePos: refPos=" .. tostring(refPos))
         local center = plot:GetPivot().Position
         local dir = Vector3.new(center.X - refPos.X, 0, center.Z - refPos.Z)
         if dir.Magnitude > 0.5 then
             local finalPos = refPos - dir.Unit * 16 + Vector3.new(0, 2, 0)
             local lookAt = finalPos - (refPos - finalPos)
             cachedBasePos = CFrame.new(finalPos, lookAt)
+            warn("[DEBUG] getBasePos: cached CFrame ok")
             return cachedBasePos
         end
+    else
+        warn("[DEBUG] getBasePos: refPos nil, usando pivot")
     end
     cachedBasePos = plot:GetPivot().Position
     return cachedBasePos
 end
 
 local function teleportTo(target)
-    if not target then return end
+    if not target then warn("[DEBUG] teleportTo: target nil"); return end
     local root = getRootPart()
     if not root then return end
     if typeof(target) == "CFrame" then
@@ -142,7 +197,7 @@ local function refreshUnits()
     local data = getPlayerData()
     gradeLabels, gradeLabelToKey = {}, {}
     traitLabels, traitLabelToKey = {}, {}
-    if not data or not data.PlayerUnits then return end
+    if not data or not data.PlayerUnits then warn("[DEBUG] refreshUnits: sem dados"); return end
     local sorted = {}
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
@@ -198,6 +253,7 @@ local function getPlayerPlot()
     local map = workspace:FindFirstChild("Map")
     local plots = map and map:FindFirstChild("PlotModels")
     cachedPlot = plots and plots:FindFirstChild(player.Name)
+    warn("[DEBUG] getPlayerPlot: " .. (cachedPlot and cachedPlot.Name or "nil"))
     return cachedPlot
 end
 
@@ -234,6 +290,7 @@ local function getPlotDroppers()
 end
 
 local function findDropperCandidates(inventoryKey)
+    warn("[DEBUG] findDropperCandidates: key=" .. tostring(inventoryKey))
     local data = getPlayerData()
     if not data or not data.PlayerUnits then return {}, "sem dados" end
     local unit = data.PlayerUnits[inventoryKey]
@@ -271,6 +328,7 @@ local function findDropperCandidates(inventoryKey)
 end
 
 local function unequipFromDropper(inventoryKey, statusPara)
+    warn("[DEBUG] unequipFromDropper: key=" .. tostring(inventoryKey))
     local ranked, info = findDropperCandidates(inventoryKey)
     if #ranked == 0 then
         statusPara:SetDesc("skip: " .. info)
@@ -279,6 +337,7 @@ local function unequipFromDropper(inventoryKey, statusPara)
     end
     for i, cand in ipairs(ranked) do
         statusPara:SetDesc("remove #" .. i .. "/" .. #ranked .. " s=" .. cand.score .. "/10 " .. cand.tag)
+        warn("[DEBUG] unequip: removeFromDropper #" .. i .. " score=" .. cand.score)
         removeFromDropper:FireServer(cand.part)
         task.wait(0.5)
         local d = getPlayerData()
@@ -297,8 +356,8 @@ end
 ----------------------------------------------------------------
 -- forward declarations
 ----------------------------------------------------------------
-local collectLoop, gradeLoop, traitLoop
-local colStatus, grdStatusPara, trtStatusPara
+local collectLoop, gradeLoop, traitLoop, crateLoop
+local colStatus, grdStatusPara, trtStatusPara, crateStatus
 
 ----------------------------------------------------------------
 -- TAB: Coletor
@@ -428,6 +487,57 @@ Options.AutoTrait:OnChanged(function()
 end)
 
 ----------------------------------------------------------------
+-- TAB: Crate (auto money collector)
+----------------------------------------------------------------
+Tabs.Crate:AddInput("CrateThreshold", {
+    Title = "Valor minimo",
+    Description = "Coleta quando PendingCashDisplay atingir este valor (ex: 80 QN, 1 SX)",
+    Default = "80 QN",
+    Placeholder = "80 QN",
+    Numeric = false,
+    Finished = true
+})
+
+Options.CrateThreshold:OnChanged(function()
+    local val = Options.CrateThreshold.Value
+    local _, suf = parseCashParts(val)
+    if suf ~= "" and not SUFFIX_RANK[suf] then
+        warn("[DEBUG] CrateThreshold: sufixo desconhecido '" .. suf .. "', ignorado")
+        return
+    end
+    crateThreshold = val
+    warn("[DEBUG] CrateThreshold atualizado: " .. val)
+end)
+
+Tabs.Crate:AddToggle("UseCashPotion", {
+    Title = "Usar Cash Potion",
+    Description = "Aplica x2 Cash antes de coletar crate polida",
+    Default = true
+})
+
+Options.UseCashPotion:OnChanged(function()
+    useCashPotion = Options.UseCashPotion.Value
+end)
+
+Tabs.Crate:AddToggle("AutoCrate", {
+    Title = "Auto Crate",
+    Description = "Coleta, polisha e vende crates automaticamente",
+    Default = false
+})
+
+crateStatus = Tabs.Crate:AddParagraph({Title = "Status", Content = "desligado"})
+
+Options.AutoCrate:OnChanged(function()
+    if configLoading then return end
+    autoCrate = Options.AutoCrate.Value
+    if autoCrate then
+        crateGen = crateGen + 1
+        crateStatus:SetDesc("ligando...")
+        task.spawn(crateLoop, crateGen)
+    end
+end)
+
+----------------------------------------------------------------
 -- TAB: Settings
 ----------------------------------------------------------------
 SaveManager:SetLibrary(Fluent)
@@ -505,11 +615,14 @@ do
     section:AddButton({Title = "Load config", Callback = function()
         local name = Options.SaveManager_ConfigList.Value
         if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
+        warn("[DEBUG] loadConfig: " .. tostring(name))
         configLoading = true
         autoGrade = false
         autoTrait = false
+        autoCrate = false
         gradeGen = gradeGen + 1
         traitGen = traitGen + 1
+        crateGen = crateGen + 1
         task.wait(0.5)
         local ok, err = SaveManager:Load(name)
         if not ok then
@@ -527,6 +640,11 @@ do
             autoTrait = true
             traitGen = traitGen + 1
             task.spawn(traitLoop, traitGen)
+        end
+        if Options.AutoCrate and Options.AutoCrate.Value then
+            autoCrate = true
+            crateGen = crateGen + 1
+            task.spawn(crateLoop, crateGen)
         end
         Fluent:Notify({Title = "Config", Content = name .. " carregada", Duration = 3})
     end})
@@ -577,18 +695,23 @@ end
 -- variant collect loop
 ----------------------------------------------------------------
 collectLoop = function()
+    warn("[DEBUG] collectLoop: iniciado")
     while autoCollect do
         local root = getRootPart()
         if not root then
             colStatus:SetDesc("sem personagem")
             task.wait(1)
+        elseif crateBusy then
+            colStatus:SetDesc("aguardando (crate busy)")
+            task.wait(1)
         else
             local got = 0
             for _, node in ipairs(getSpawnNodes()) do
-                if not autoCollect then break end
+                if not autoCollect or crateBusy then break end
                 if node:GetAttribute("Occupied") == true then
                     collecting = true
                     colStatus:SetDesc("coletando: " .. (node:GetAttribute("Variant") or "?"))
+                    warn("[DEBUG] collectLoop: variant=" .. tostring(node:GetAttribute("Variant")) .. " pos=" .. tostring(node.Position))
                     teleportTo(node.Position)
                     task.wait(0.1)
                     collectRemote:FireServer(node)
@@ -612,7 +735,8 @@ end
 
 pcall(function()
     remotes:WaitForChild("VariantTokenSpawned", 5).OnClientEvent:Connect(function(variant)
-        if not autoCollect then return end
+        warn("[DEBUG] VariantTokenSpawned: " .. tostring(variant) .. " autoCollect=" .. tostring(autoCollect) .. " crateBusy=" .. tostring(crateBusy))
+        if not autoCollect or crateBusy then return end
         colStatus:SetDesc("spawn: " .. tostring(variant))
         task.wait(0.1)
         local root = getRootPart()
@@ -638,6 +762,7 @@ end)
 -- auto grade loop
 ----------------------------------------------------------------
 gradeLoop = function(gen)
+    warn("[DEBUG] gradeLoop: gen=" .. tostring(gen) .. " key=" .. tostring(selectedGradeKey))
     if not selectedGradeKey then
         grdStatusPara:SetDesc("selecione unidade primeiro")
         autoGrade = false
@@ -671,9 +796,9 @@ gradeLoop = function(gen)
     local reachedTarget = false
     local wasCollecting = false
     while autoGrade and gen == gradeGen do
-        if collecting then
+        if collecting or crateBusy then
             wasCollecting = true
-            grdStatusPara:SetDesc("pausado (coletando)")
+            grdStatusPara:SetDesc("pausado (" .. (crateBusy and "crate" or "coletando") .. ")")
             task.wait(0.3)
         else
             if wasCollecting then
@@ -697,6 +822,7 @@ gradeLoop = function(gen)
                 Options.AutoGrade:SetValue(false)
                 break
             end
+            if gradeRolls % 25 == 0 then warn("[DEBUG] gradeLoop: roll=" .. gradeRolls .. " cur=" .. tostring(cur)) end
             gradeRemote:FireServer(selectedGradeKey, false, cur)
             gradeRolls = gradeRolls + 1
             grdStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. gradeRolls)
@@ -715,6 +841,7 @@ end
 -- auto trait loop
 ----------------------------------------------------------------
 traitLoop = function(gen)
+    warn("[DEBUG] traitLoop: gen=" .. tostring(gen) .. " key=" .. tostring(selectedTraitKey))
     if not selectedTraitKey then
         trtStatusPara:SetDesc("selecione unidade primeiro")
         autoTrait = false
@@ -748,9 +875,9 @@ traitLoop = function(gen)
     local reachedTarget = false
     local wasCollecting = false
     while autoTrait and gen == traitGen do
-        if collecting then
+        if collecting or crateBusy then
             wasCollecting = true
-            trtStatusPara:SetDesc("pausado (coletando)")
+            trtStatusPara:SetDesc("pausado (" .. (crateBusy and "crate" or "coletando") .. ")")
             task.wait(0.3)
         else
             if wasCollecting then
@@ -774,6 +901,7 @@ traitLoop = function(gen)
                 Options.AutoTrait:SetValue(false)
                 break
             end
+            if traitRolls % 25 == 0 then warn("[DEBUG] traitLoop: roll=" .. traitRolls .. " cur=" .. tostring(cur)) end
             traitRemote:FireServer(selectedTraitKey, cur)
             traitRolls = traitRolls + 1
             trtStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. traitRolls)
@@ -786,6 +914,184 @@ traitLoop = function(gen)
         task.wait(0.3)
     end
     teleportTo(getBasePos())
+end
+
+----------------------------------------------------------------
+-- auto crate loop
+----------------------------------------------------------------
+crateLoop = function(gen)
+    warn("[DEBUG] crateLoop: iniciado gen=" .. tostring(gen))
+    local plot = getPlayerPlot()
+    if not plot then crateStatus:SetDesc("sem plot"); autoCrate = false; Options.AutoCrate:SetValue(false); return end
+
+    if not pickupCrateRemote or not depositCrateRemote or not collectPolishedRemote or not sellCrateRemote then
+        crateStatus:SetDesc("remotes crate ausentes!")
+        warn("[DEBUG] crateLoop: remotes nil, abortando")
+        autoCrate = false; Options.AutoCrate:SetValue(false); return
+    end
+
+    local conveyorPart
+    for _, part in ipairs(CollectionService:GetTagged("ConveyorCollectPart")) do
+        if part:IsDescendantOf(plot) then conveyorPart = part; break end
+    end
+    if not conveyorPart then crateStatus:SetDesc("ConveyorCollectPart nao encontrado"); autoCrate = false; Options.AutoCrate:SetValue(false); return end
+
+    local polisherCollectPart
+    for _, model in ipairs(CollectionService:GetTagged("CratePolisherModel")) do
+        if model:IsDescendantOf(plot) then
+            local phys = model:FindFirstChild("PhysicalModel")
+            local cp = phys and phys:FindFirstChild("CollectPart")
+            if cp then polisherCollectPart = cp; break end
+        end
+    end
+    if not polisherCollectPart then crateStatus:SetDesc("Polisher nao encontrado"); autoCrate = false; Options.AutoCrate:SetValue(false); return end
+
+    warn("[DEBUG] crateLoop: conveyor=" .. conveyorPart:GetFullName())
+    warn("[DEBUG] crateLoop: polisher=" .. polisherCollectPart:GetFullName())
+
+    local sellNPC
+    for _, part in ipairs(CollectionService:GetTagged("SellNPC")) do
+        sellNPC = part; break
+    end
+    if sellNPC then warn("[DEBUG] crateLoop: sellNPC=" .. sellNPC:GetFullName()) end
+
+    while autoCrate and gen == crateGen do
+        local display = conveyorPart:GetAttribute("PendingCashDisplay") or "0"
+        local balls = conveyorPart:GetAttribute("PendingBallCount") or 0
+        crateStatus:SetDesc("$" .. display .. " (" .. balls .. " balls) | alvo: " .. crateThreshold)
+
+        if balls <= 0 or not cashGTE(display, crateThreshold) then
+            task.wait(5)
+            continue
+        end
+
+        -- esperar collectLoop terminar antes de iniciar ciclo
+        while collecting do task.wait(0.3) end
+        if not autoCrate or gen ~= crateGen then break end
+
+        warn("[DEBUG] crateLoop: THRESHOLD! display=" .. display .. " balls=" .. balls)
+        crateBusy = true
+        local cycleOk, cycleErr = pcall(function()
+
+            -- fase 1: pickup
+            crateStatus:SetDesc("fase 1/6: coletando crate...")
+            local ballsBefore = conveyorPart:GetAttribute("PendingBallCount") or 0
+            teleportTo(conveyorPart.Position)
+            task.wait(0.3)
+            pickupCrateRemote:FireServer(conveyorPart)
+            task.wait(0.8)
+            local ballsAfter = conveyorPart:GetAttribute("PendingBallCount") or 0
+            local char = player.Character
+            local hasTool = false
+            if char then
+                for _, t in ipairs(char:GetChildren()) do
+                    if t:IsA("Tool") and t:GetAttribute("InventoryType") == "Crate" then hasTool = true; break end
+                end
+            end
+            warn("[DEBUG] crateLoop: pickup balls " .. ballsBefore .. "->" .. ballsAfter .. " tool=" .. tostring(hasTool))
+            if not hasTool then
+                crateStatus:SetDesc("pickup falhou — sem crate na mao")
+                warn("[DEBUG] crateLoop: pickup FALHOU, abortando ciclo")
+                return false
+            end
+
+            -- fase 2: deposit no polisher
+            crateStatus:SetDesc("fase 2/6: depositando no polisher...")
+            teleportTo(polisherCollectPart.Position)
+            task.wait(0.3)
+            depositCrateRemote:FireServer(polisherCollectPart)
+            task.wait(0.5)
+            local data = getPlayerData()
+            local pendingCash = data and data.Polisher and data.Polisher.PendingCash or 0
+            warn("[DEBUG] crateLoop: deposit done, Polisher.PendingCash=" .. tostring(pendingCash))
+
+            -- fase 3: aguardar polish
+            crateStatus:SetDesc("fase 3/6: aguardando polish...")
+            local polishStart = tick()
+            local polishTimeout = 300
+            local polishOk = false
+            while autoCrate and gen == crateGen do
+                local polished = polisherCollectPart:GetAttribute("PolishedBallCount") or 0
+                local d2 = getPlayerData()
+                local pc = d2 and d2.Polisher and d2.Polisher.PendingCash or 0
+                if polished > 0 and pc == 0 then
+                    warn("[DEBUG] crateLoop: polish OK em " .. string.format("%.1fs", tick() - polishStart) .. " polished=" .. polished)
+                    polishOk = true
+                    break
+                end
+                local elapsed = tick() - polishStart
+                if elapsed > polishTimeout then
+                    warn("[DEBUG] crateLoop: polish TIMEOUT " .. polishTimeout .. "s, polished=" .. polished .. " pending=" .. tostring(pc))
+                    crateStatus:SetDesc("polish timeout!")
+                    break
+                end
+                crateStatus:SetDesc("fase 3/6: polindo... " .. string.format("%.0fs", polishTimeout - elapsed) .. " | pending=$" .. tostring(pc))
+                task.wait(3)
+            end
+            if not polishOk then return false end
+
+            -- fase 4: cash potion
+            if useCashPotion and useItemRemote then
+                local potionsFolder = player:FindFirstChild("Potions")
+                local active = potionsFolder and (potionsFolder:GetAttribute("CashPotion") or 0) > 0
+                if not active then
+                    crateStatus:SetDesc("fase 4/6: usando Cash Potion...")
+                    useItemRemote:FireServer("CashPotion")
+                    warn("[DEBUG] crateLoop: UseItem CashPotion fired")
+                    task.wait(1)
+                else
+                    warn("[DEBUG] crateLoop: CashPotion ja ativa, skip")
+                end
+            end
+
+            -- fase 5: collect polished
+            crateStatus:SetDesc("fase 5/6: coletando crate polida...")
+            local polishedBefore = polisherCollectPart:GetAttribute("PolishedBallCount") or 0
+            collectPolishedRemote:FireServer(polisherCollectPart)
+            task.wait(0.8)
+            local polishedAfter = polisherCollectPart:GetAttribute("PolishedBallCount") or 0
+            warn("[DEBUG] crateLoop: collect polished=" .. polishedBefore .. "->" .. polishedAfter)
+
+            -- fase 6: sell
+            crateStatus:SetDesc("fase 6/6: vendendo...")
+            if sellNPC then
+                local sellPos = sellNPC:IsA("BasePart") and sellNPC.Position or sellNPC:GetPivot().Position
+                teleportTo(sellPos)
+                task.wait(0.3)
+            end
+            local sold = 0
+            char = player.Character
+            if char then
+                for _, tool in ipairs(char:GetChildren()) do
+                    if tool:IsA("Tool") and tool:GetAttribute("InventoryType") == "Crate" then
+                        local guid = tool:GetAttribute("InventoryKey")
+                        if guid then
+                            sellCrateRemote:FireServer(guid)
+                            sold = sold + 1
+                            task.wait(0.3)
+                        end
+                    end
+                end
+            end
+            warn("[DEBUG] crateLoop: vendidas=" .. sold)
+            return true
+        end)
+
+        crateBusy = false
+        if not cycleOk then
+            warn("[DEBUG] crateLoop: ERRO no ciclo: " .. tostring(cycleErr))
+            crateStatus:SetDesc("erro: " .. tostring(cycleErr))
+        elseif cycleErr == false then
+            crateStatus:SetDesc("ciclo abortado, retentando em 10s...")
+            task.wait(10)
+        else
+            crateStatus:SetDesc("ciclo completo! aguardando acumular...")
+        end
+        teleportTo(returnPos())
+        task.wait(3)
+    end
+    crateBusy = false
+    crateStatus:SetDesc("desligado")
 end
 
 ----------------------------------------------------------------
