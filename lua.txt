@@ -468,11 +468,24 @@ do
         pcall(writefile, path, "")
     end
 
+    local function getDropdownFrame()
+        local ok, result = pcall(function()
+            local dd = Options.SaveManager_ConfigList
+            if not dd or not dd.Destroy then return nil end
+            local ups = getupvalues(dd.Destroy)
+            for _, v in pairs(ups) do
+                if type(v) == "table" and v.Frame then
+                    return v.Frame
+                end
+            end
+        end)
+        return ok and result or nil
+    end
+
     local function setDropdownVisible(visible)
         pcall(function()
-            local dd = Options.SaveManager_ConfigList
-            local frame = dd.Instance or dd.Frame
-            if frame and frame.Visible ~= nil then frame.Visible = visible end
+            local frame = getDropdownFrame()
+            if frame then frame.Visible = visible end
         end)
     end
 
@@ -482,19 +495,18 @@ do
         if #list == 0 then
             dd:SetValues({})
             dd:SetValue(nil)
+            dd:Display()
             setDropdownVisible(false)
         elseif selectName then
             setDropdownVisible(true)
             dd:SetValues(list)
-            task.wait(0.05)
             dd:SetValue(selectName)
+            dd:Display()
         else
-            dd:SetValues({"--"})
-            dd:SetValue("--")
-            task.wait(0.05)
-            setDropdownVisible(true)
             dd:SetValues(list)
             dd:SetValue(nil)
+            dd:Display()
+            setDropdownVisible(true)
         end
     end
 
