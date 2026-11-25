@@ -191,20 +191,45 @@ local function gradeReached(current, target)
     return (GRADE_ORDER[current] or 0) >= (GRADE_ORDER[target] or 99)
 end
 
+local cachedPlot
+local function getPlayerPlot()
+    if cachedPlot and cachedPlot.Parent then return cachedPlot end
+    local map = workspace:FindFirstChild("Map")
+    local plots = map and map:FindFirstChild("PlotModels")
+    cachedPlot = plots and plots:FindFirstChild(player.Name)
+    return cachedPlot
+end
+
+local cachedSpawnNodes, spawnNodesTick = {}, 0
 local function getSpawnNodes()
+    local now = tick()
+    if now - spawnNodesTick < 2 then return cachedSpawnNodes end
+    spawnNodesTick = now
     local nodes = CollectionService:GetTagged("VariantTokenSpawn")
     if #nodes == 0 then
         local f = workspace:FindFirstChild("Systems")
         f = f and f:FindFirstChild("VariantTokenSpawns")
         if f then nodes = f:GetChildren() end
     end
-    return nodes or {}
+    cachedSpawnNodes = nodes or {}
+    return cachedSpawnNodes
 end
 
-local function getPlayerPlot()
-    local map = workspace:FindFirstChild("Map")
-    local plots = map and map:FindFirstChild("PlotModels")
-    return plots and plots:FindFirstChild(player.Name)
+local cachedDroppers, droppersTick = {}, 0
+local function getPlotDroppers()
+    local now = tick()
+    if now - droppersTick < 3 and #cachedDroppers > 0 then return cachedDroppers end
+    droppersTick = now
+    local plot = getPlayerPlot()
+    if not plot then cachedDroppers = {}; return cachedDroppers end
+    local out = {}
+    for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
+        if part:IsDescendantOf(plot) then
+            table.insert(out, part)
+        end
+    end
+    cachedDroppers = out
+    return out
 end
 
 local function findDropperCandidates(inventoryKey)
@@ -220,8 +245,8 @@ local function findDropperCandidates(inventoryKey)
     local uLevel = tostring(unit.Level or 1)
     local uVariant = tostring(unit.Variant or "Normal")
     local ranked = {}
-    for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
-        if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
+    for _, part in ipairs(getPlotDroppers()) do
+        if part:GetAttribute("Type") == "PlayerUnit" then
             if part:GetAttribute("PlayerUnitName") == uName then
                 local score = 0
                 local dGrade = part:GetAttribute("PlayerUnitGrade")
@@ -414,34 +439,33 @@ SaveManager:BuildConfigSection(Tabs.Settings)
 ----------------------------------------------------------------
 collectLoop = function()
     while autoCollect do
-        local nodes = getSpawnNodes()
         local root = getRootPart()
         if not root then
             colStatus:SetDesc("sem personagem")
             task.wait(1)
         else
             local got = 0
-            for _, node in ipairs(nodes) do
+            for _, node in ipairs(getSpawnNodes()) do
                 if not autoCollect then break end
                 if node:GetAttribute("Occupied") == true then
-                    local v = node:GetAttribute("Variant") or "?"
-                    colStatus:SetDesc("coletando: " .. v)
                     collecting = true
+                    colStatus:SetDesc("coletando: " .. (node:GetAttribute("Variant") or "?"))
                     teleportTo(node.Position)
                     task.wait(0.1)
                     collectRemote:FireServer(node)
                     got = got + 1
                     totalCollected = totalCollected + 1
-                    colStatus:SetDesc("coletados: " .. totalCollected)
                     task.wait(LOOP_DELAY)
                 end
             end
             if got > 0 then
+                colStatus:SetDesc("+" .. got .. " | total: " .. totalCollected)
                 teleportTo(returnPos())
+            else
+                colStatus:SetDesc("aguardando...")
             end
             collecting = false
-            colStatus:SetDesc(got > 0 and ("+" .. got .. " coletados | total: " .. totalCollected) or ("aguardando... " .. #nodes .. " pontos"))
-            task.wait(0.3)
+            task.wait(0.5)
         end
     end
     colStatus:SetDesc("desligado")
@@ -636,7 +660,8 @@ local function findLabelForKey(map, key)
 end
 
 task.spawn(function()
-    while task.wait(10) do
+    while task.wait(15) do
+        if autoGrade or autoTrait then continue end
         local prevGradeKey = selectedGradeKey
         local prevTraitKey = selectedTraitKey
         refreshUnits()
@@ -673,12 +698,25 @@ UIS.InputBegan:Connect(function(input, gpe)
 end)
 
 ----------------------------------------------------------------
--- anti-afk
+-- anti-afk (loop ativo — não depende de VirtualUser)
 ----------------------------------------------------------------
-local VirtualUser = game:GetService("VirtualUser")
-player.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
+pcall(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    player.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+task.spawn(function()
+    while task.wait(45) do
+        local root = getRootPart()
+        if not root then continue end
+        local hum = root.Parent and root.Parent:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Jump = true
+        end
+    end
 end)
 
 ----------------------------------------------------------------
