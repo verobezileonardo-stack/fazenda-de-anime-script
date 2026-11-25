@@ -447,6 +447,7 @@ do
         local ok, err = SaveManager:Save(name)
         if not ok then return Fluent:Notify({Title = "Config", Content = "Erro: " .. tostring(err), Duration = 5}) end
         Fluent:Notify({Title = "Config", Content = name .. " criada", Duration = 3})
+        Options.SaveManager_ConfigName:SetValue("")
         Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
         Options.SaveManager_ConfigList:SetValue(name)
     end})
