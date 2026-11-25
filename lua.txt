@@ -435,6 +435,23 @@ InterfaceManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
 InterfaceManager:SetFolder("FazendaDeAnime")
 SaveManager:SetFolder("FazendaDeAnime/config")
+
+do
+    local origRefresh = SaveManager.RefreshConfigList
+    function SaveManager:RefreshConfigList()
+        local list = origRefresh(self)
+        local out = {}
+        for _, name in ipairs(list) do
+            local path = self.Folder .. "/settings/" .. name .. ".json"
+            local ok, content = pcall(readfile, path)
+            if ok and content and #content > 2 then
+                table.insert(out, name)
+            end
+        end
+        return out
+    end
+end
+
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 do
     local section = Tabs.Settings:AddSection("Configuration")
@@ -450,8 +467,7 @@ do
         if not ok then return Fluent:Notify({Title = "Config", Content = "Erro: " .. tostring(err), Duration = 5}) end
         Fluent:Notify({Title = "Config", Content = name .. " criada", Duration = 3})
         Options.SaveManager_ConfigName:SetValue("")
-        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
-        Options.SaveManager_ConfigList:SetValue(name)
+        refreshDropdown(name)
     end})
 
     section:AddButton({Title = "Load config", Callback = function()
@@ -491,14 +507,21 @@ do
         Fluent:Notify({Title = "Config", Content = name .. " atualizada", Duration = 3})
     end})
 
-    local function tryDelete(path)
+    local function nukeFile(path)
         for _, fn in ipairs({delfile, rmfile}) do
             if type(fn) == "function" then
-                local ok = pcall(fn, path)
-                if ok and not isfile(path) then return true end
+                pcall(fn, path)
+                if not isfile(path) then return end
             end
         end
-        return false
+        pcall(writefile, path, "")
+    end
+
+    local function refreshDropdown(selectName)
+        local list = SaveManager:RefreshConfigList()
+        Options.SaveManager_ConfigList:SetValues(list)
+        task.wait(0.05)
+        Options.SaveManager_ConfigList:SetValue(selectName)
     end
 
     section:AddButton({Title = "Delete config", Callback = function()
@@ -506,23 +529,17 @@ do
         if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
         local path = SaveManager.Folder .. "/settings/" .. name .. ".json"
         if not isfile(path) then return end
-        if not tryDelete(path) then
-            return Fluent:Notify({Title = "Config", Content = "Executor nao suporta deletar arquivos", Duration = 5})
-        end
+        nukeFile(path)
         local autoPath = SaveManager.Folder .. "/settings/autoload.txt"
         if isfile(autoPath) and readfile(autoPath) == name then
-            tryDelete(autoPath)
+            nukeFile(autoPath)
         end
-        Options.SaveManager_ConfigList:SetValues({})
-        Options.SaveManager_ConfigList:SetValue(nil)
-        task.wait(0.05)
-        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+        refreshDropdown(nil)
         Fluent:Notify({Title = "Config", Content = name .. " deletada", Duration = 3})
     end})
 
     section:AddButton({Title = "Refresh list", Callback = function()
-        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
-        Options.SaveManager_ConfigList:SetValue(nil)
+        refreshDropdown(Options.SaveManager_ConfigList.Value)
     end})
 
     local AutoloadButton
