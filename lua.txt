@@ -22,6 +22,7 @@ local Tabs = {
     Grade = Window:AddTab({Title = "Grade"}),
     Trait = Window:AddTab({Title = "Trait"}),
     Crate = Window:AddTab({Title = "Crate"}),
+    Potions = Window:AddTab({Title = "Potions"}),
     Settings = Window:AddTab({Title = "Settings"})
 }
 
@@ -566,6 +567,79 @@ do
         end
         return out
     end
+end
+
+----------------------------------------------------------------
+-- potions tab
+----------------------------------------------------------------
+do
+    local CATS = {"Poções", "Weather Globes"}
+    local ITEMS = {
+        ["Poções"] = {"LuckPotion", "CashPotion", "GradeSpeedPotion", "DuckPotion", "BluetoothPotion"},
+        ["Weather Globes"] = {"SnowGlobe", "ThunderGlobe", "GoldenGlobe", "CosmicGlobe", "MysteryGlobe"}
+    }
+    local LABELS = {
+        LuckPotion = "Luck (+1 Luck, 5min)",
+        CashPotion = "Cash (x2 Cash, 5min)",
+        GradeSpeedPotion = "Token Speed (25% faster, 3min)",
+        DuckPotion = "Duck (x3 Speed, 1min)",
+        BluetoothPotion = "Bluetooth (roll anywhere, 10min)",
+        SnowGlobe = "Snow (Snowstorm)",
+        ThunderGlobe = "Thunder (Thunderstorm)",
+        GoldenGlobe = "Golden (Golden Hour)",
+        CosmicGlobe = "Cosmic (Cosmic)",
+        MysteryGlobe = "Mystery (Random)"
+    }
+    local LABEL_TO_KEY = {}
+    for k, v in pairs(LABELS) do LABEL_TO_KEY[v] = k end
+
+    local function labelsFor(cat)
+        local out = {}
+        for _, k in ipairs(ITEMS[cat] or {}) do table.insert(out, LABELS[k]) end
+        return out
+    end
+
+    local selPotionKey = nil
+    local selCat = CATS[1]
+
+    Tabs.Potions:AddDropdown("PotionCat", {
+        Title = "Categoria",
+        Values = CATS,
+        Default = 1
+    })
+
+    Tabs.Potions:AddDropdown("PotionItem", {
+        Title = "Item",
+        Values = labelsFor(selCat),
+        AllowNull = true
+    })
+
+    Options.PotionCat:OnChanged(function()
+        selCat = Options.PotionCat.Value or CATS[1]
+        Options.PotionItem:SetValues(labelsFor(selCat))
+        selPotionKey = nil
+    end)
+
+    Options.PotionItem:OnChanged(function()
+        selPotionKey = LABEL_TO_KEY[Options.PotionItem.Value]
+    end)
+
+    Tabs.Potions:AddButton({
+        Title = "Usar",
+        Description = "Usa o item selecionado",
+        Callback = function()
+            if not selPotionKey then
+                return Fluent:Notify({Title = "Potions", Content = "Selecione um item", Duration = 3})
+            end
+            if selCat == "Weather Globes" then
+                local r = remotes:FindFirstChild("UseWeatherGlobe")
+                if r then r:FireServer(selPotionKey) else return Fluent:Notify({Title = "Potions", Content = "Remote nao encontrado", Duration = 3}) end
+            else
+                if useItemRemote then useItemRemote:FireServer(selPotionKey) else return Fluent:Notify({Title = "Potions", Content = "Remote nao encontrado", Duration = 3}) end
+            end
+            Fluent:Notify({Title = "Potions", Content = selPotionKey .. " usado!", Duration = 3})
+        end
+    })
 end
 
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
