@@ -197,20 +197,22 @@ local function findDropperWithUnit(inventoryKey)
     local uName = unit.PlayerUnitName
     local uGrade = unit.PlayerUnitGrade or unit.Grade
     local uTrait = unit.PlayerUnitTrait or unit.Trait
-    local uVariant = unit.PlayerUnitVariant or unit.Variant
-    local uLevel = unit.PlayerUnitLevel or unit.Level
+    local best, bestScore = nil, -1
     for _, part in ipairs(CollectionService:GetTagged("DropperBasePart")) do
         if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
-            if part:GetAttribute("PlayerUnitName") == uName
-                and part:GetAttribute("PlayerUnitGrade") == uGrade
-                and part:GetAttribute("PlayerUnitTrait") == uTrait
-                and part:GetAttribute("PlayerUnitVariant") == uVariant
-                and part:GetAttribute("PlayerUnitLevel") == uLevel then
-                return part
+            if part:GetAttribute("PlayerUnitName") == uName then
+                local score = 1
+                local dGrade = part:GetAttribute("PlayerUnitGrade")
+                local dTrait = part:GetAttribute("PlayerUnitTrait")
+                if tostring(dGrade) == tostring(uGrade) then score = score + 2 end
+                if tostring(dTrait) == tostring(uTrait) then score = score + 2 end
+                if score > bestScore then
+                    best, bestScore = part, score
+                end
             end
         end
     end
-    return nil
+    return best
 end
 
 local function unequipFromDropper(inventoryKey, statusPara)
@@ -441,18 +443,19 @@ gradeLoop = function(gen)
     if not root then grdStatusPara:SetDesc("sem personagem"); return end
     local target = GRADE_TARGETS[gradeTargetIdx]
     local data = getPlayerData()
-    if data and data.PlayerUnits then
-        local unit = data.PlayerUnits[selectedGradeKey]
-        if unit then
-            local cur = unit.PlayerUnitGrade or unit.Grade
-            if cur and gradeReached(cur, target) then
-                grdStatusPara:SetDesc(cur .. " | ja no alvo!")
-                Fluent:Notify({Title = "Grade", Content = cur .. " ja esta no alvo!", Duration = 3})
-                autoGrade = false
-                Options.AutoGrade:SetValue(false)
-                return
-            end
-        end
+    if not data or not data.PlayerUnits or not data.PlayerUnits[selectedGradeKey] then
+        grdStatusPara:SetDesc("unidade nao encontrada"); autoGrade = false; Options.AutoGrade:SetValue(false); return
+    end
+    local unitInfo = data.PlayerUnits[selectedGradeKey]
+    local unitName = unitInfo.PlayerUnitName or "?"
+    local cur = unitInfo.PlayerUnitGrade or unitInfo.Grade
+    grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] -> " .. target)
+    if cur and gradeReached(cur, target) then
+        grdStatusPara:SetDesc(unitName .. " [" .. tostring(cur) .. "] ja no alvo!")
+        Fluent:Notify({Title = "Grade", Content = unitName .. " " .. tostring(cur) .. " ja esta no alvo!", Duration = 3})
+        autoGrade = false
+        Options.AutoGrade:SetValue(false)
+        return
     end
     unequipFromDropper(selectedGradeKey, grdStatusPara)
     teleportTo(POS_GRADE)
@@ -487,7 +490,7 @@ gradeLoop = function(gen)
             end
             gradeRemote:FireServer(selectedGradeKey, false, cur)
             gradeRolls = gradeRolls + 1
-            grdStatusPara:SetDesc(cur .. " -> " .. target .. " | " .. gradeRolls .. " rolls")
+            grdStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. gradeRolls)
             task.wait(0.4)
         end
     end
@@ -511,18 +514,19 @@ traitLoop = function(gen)
     if not root then trtStatusPara:SetDesc("sem personagem"); return end
     local target = TRAIT_TARGETS[traitTargetIdx]
     local data = getPlayerData()
-    if data and data.PlayerUnits then
-        local unit = data.PlayerUnits[selectedTraitKey]
-        if unit then
-            local cur = unit.PlayerUnitTrait or unit.Trait
-            if cur and cur == target then
-                trtStatusPara:SetDesc(cur .. " | ja no alvo!")
-                Fluent:Notify({Title = "Trait", Content = cur .. " ja esta no alvo!", Duration = 3})
-                autoTrait = false
-                Options.AutoTrait:SetValue(false)
-                return
-            end
-        end
+    if not data or not data.PlayerUnits or not data.PlayerUnits[selectedTraitKey] then
+        trtStatusPara:SetDesc("unidade nao encontrada"); autoTrait = false; Options.AutoTrait:SetValue(false); return
+    end
+    local unitInfo = data.PlayerUnits[selectedTraitKey]
+    local unitName = unitInfo.PlayerUnitName or "?"
+    local cur = unitInfo.PlayerUnitTrait or unitInfo.Trait
+    trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") -> " .. target)
+    if cur and cur == target then
+        trtStatusPara:SetDesc(unitName .. " (" .. tostring(cur) .. ") ja no alvo!")
+        Fluent:Notify({Title = "Trait", Content = unitName .. " " .. tostring(cur) .. " ja esta no alvo!", Duration = 3})
+        autoTrait = false
+        Options.AutoTrait:SetValue(false)
+        return
     end
     unequipFromDropper(selectedTraitKey, trtStatusPara)
     teleportTo(POS_TRAIT)
@@ -557,7 +561,7 @@ traitLoop = function(gen)
             end
             traitRemote:FireServer(selectedTraitKey, cur)
             traitRolls = traitRolls + 1
-            trtStatusPara:SetDesc(cur .. " -> " .. target .. " | " .. traitRolls .. " rolls")
+            trtStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. traitRolls)
             task.wait(0.4)
         end
     end
