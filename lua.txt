@@ -136,8 +136,8 @@ local function refreshUnits()
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
         if not name or name == "" then continue end
-        local grade = unit.Grade or "F"
-        local trait = unit.Trait or "-"
+        local grade = unit.Grade
+        local trait = unit.Trait
         local level = unit.Level or 1
         local variant = unit.Variant or "Normal"
         local eq = unit.Equipped and " [E]" or ""
@@ -146,14 +146,20 @@ local function refreshUnits()
     table.sort(sorted, function(a,b)
         if a.name ~= b.name then return a.name < b.name end
         if a.variant ~= b.variant then return a.variant < b.variant end
-        if a.grade ~= b.grade then return (GRADE_ORDER[a.grade] or 0) < (GRADE_ORDER[b.grade] or 0) end
-        if a.trait ~= b.trait then return a.trait < b.trait end
+        local ga, gb = GRADE_ORDER[a.grade] or 0, GRADE_ORDER[b.grade] or 0
+        if ga ~= gb then return ga < gb end
+        local ta, tb = a.trait or "", b.trait or ""
+        if ta ~= tb then return ta < tb end
         if a.level ~= b.level then return a.level < b.level end
         return a.key < b.key
     end)
     for _, u in ipairs(sorted) do
-        local vTag = u.variant ~= "Normal" and " " .. u.variant or ""
-        local base = u.name .. vTag .. " Lv" .. u.level .. " " .. u.grade .. " | " .. u.trait .. u.eq
+        local parts = {u.name}
+        if u.variant ~= "Normal" then table.insert(parts, u.variant) end
+        table.insert(parts, "Lv" .. u.level)
+        if u.grade then table.insert(parts, u.grade) end
+        if u.trait then table.insert(parts, "| " .. u.trait) end
+        local base = table.concat(parts, " ") .. u.eq
         local label = base
         local n = 1
         while seen[label] do
@@ -200,8 +206,8 @@ local function findDropperCandidates(inventoryKey)
     local plot = getPlayerPlot()
     if not plot then return {}, "sem plot" end
     local uName = unit.PlayerUnitName
-    local uGrade = tostring(unit.Grade or "F")
-    local uTrait = tostring(unit.Trait or "")
+    local uGrade = unit.Grade and tostring(unit.Grade) or nil
+    local uTrait = unit.Trait and tostring(unit.Trait) or nil
     local uLevel = tostring(unit.Level or 1)
     local uVariant = tostring(unit.Variant or "Normal")
     local ranked = {}
@@ -209,20 +215,23 @@ local function findDropperCandidates(inventoryKey)
         if part:GetAttribute("Type") == "PlayerUnit" and part:IsDescendantOf(plot) then
             if part:GetAttribute("PlayerUnitName") == uName then
                 local score = 0
-                local dGrade = tostring(part:GetAttribute("PlayerUnitGrade") or "F")
-                local dTrait = tostring(part:GetAttribute("PlayerUnitTrait") or "")
+                local dGrade = part:GetAttribute("PlayerUnitGrade")
+                local dTrait = part:GetAttribute("PlayerUnitTrait")
                 local dLevel = tostring(part:GetAttribute("PlayerUnitLevel") or 1)
                 local dVariant = tostring(part:GetAttribute("PlayerUnitVariant") or "Normal")
                 if dVariant == uVariant then score = score + 4 end
-                if dGrade == uGrade then score = score + 3 end
-                if dTrait == uTrait then score = score + 2 end
                 if dLevel == uLevel then score = score + 1 end
-                table.insert(ranked, {part = part, score = score, tag = dVariant .. " Lv" .. dLevel .. " " .. dGrade .. " " .. dTrait})
+                if uGrade and dGrade and tostring(dGrade) == uGrade then score = score + 3
+                elseif not uGrade and not dGrade then score = score + 3 end
+                if uTrait and dTrait and tostring(dTrait) == uTrait then score = score + 2
+                elseif not uTrait and not dTrait then score = score + 2 end
+                local tag = dVariant .. " Lv" .. dLevel .. " " .. (dGrade or "-") .. " " .. (dTrait or "-")
+                table.insert(ranked, {part = part, score = score, tag = tag})
             end
         end
     end
     table.sort(ranked, function(a, b) return a.score > b.score end)
-    local info = uName .. " " .. uVariant .. " Lv" .. uLevel .. " " .. uGrade .. " " .. uTrait .. " | " .. #ranked .. " candidatos"
+    local info = uName .. " " .. uVariant .. " Lv" .. uLevel .. " " .. (uGrade or "-") .. " " .. (uTrait or "-") .. " | " .. #ranked .. " cand"
     return ranked, info
 end
 
