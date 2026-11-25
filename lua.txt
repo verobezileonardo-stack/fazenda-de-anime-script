@@ -328,7 +328,8 @@ Tabs.Grade:AddDropdown("GradeUnit", {
     Title = "Unidade",
     Description = "Selecione a unidade para reroll de grade",
     Values = gradeLabels,
-    Default = nil
+    Default = nil,
+    AllowNull = true
 })
 
 Options.GradeUnit:OnChanged(function()
@@ -380,7 +381,8 @@ Tabs.Trait:AddDropdown("TraitUnit", {
     Title = "Unidade",
     Description = "Selecione a unidade para reroll de trait",
     Values = traitLabels,
-    Default = nil
+    Default = nil,
+    AllowNull = true
 })
 
 Options.TraitUnit:OnChanged(function()
