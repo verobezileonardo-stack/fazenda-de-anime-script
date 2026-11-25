@@ -814,7 +814,8 @@ gradeLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then warn("[DEBUG] gradeLoop: BREAK unidade removida key=" .. tostring(selectedGradeKey)); grdStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.Grade or "F"
+            local rawGrade = unit.Grade
+            local cur = rawGrade or "F"
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
                 Fluent:Notify({Title = "Grade", Content = unitName .. " " .. cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
@@ -823,8 +824,8 @@ gradeLoop = function(gen)
                 Options.AutoGrade:SetValue(false)
                 break
             end
-            if gradeRolls % 25 == 0 then warn("[DEBUG] gradeLoop: roll=" .. gradeRolls .. " cur=" .. tostring(cur)) end
-            gradeRemote:FireServer(selectedGradeKey, false, cur)
+            if gradeRolls % 25 == 0 then warn("[DEBUG] gradeLoop: roll=" .. gradeRolls .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawGrade)) end
+            gradeRemote:FireServer(selectedGradeKey, false, rawGrade)
             gradeRolls = gradeRolls + 1
             grdStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. gradeRolls)
             task.wait(0.4)
@@ -894,7 +895,8 @@ traitLoop = function(gen)
             end
             local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then warn("[DEBUG] traitLoop: BREAK unidade removida key=" .. tostring(selectedTraitKey)); trtStatusPara:SetDesc("unidade removida"); break end
-            local cur = unit.Trait or "Normal"
+            local rawTrait = unit.Trait
+            local cur = rawTrait or "Normal"
             if cur == target then
                 trtStatusPara:SetDesc(unitName .. " " .. cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
                 Fluent:Notify({Title = "Trait", Content = unitName .. " " .. cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
@@ -903,8 +905,8 @@ traitLoop = function(gen)
                 Options.AutoTrait:SetValue(false)
                 break
             end
-            if traitRolls % 25 == 0 then warn("[DEBUG] traitLoop: roll=" .. traitRolls .. " cur=" .. tostring(cur)) end
-            traitRemote:FireServer(selectedTraitKey, cur)
+            if traitRolls % 25 == 0 then warn("[DEBUG] traitLoop: roll=" .. traitRolls .. " cur=" .. tostring(cur) .. " raw=" .. tostring(rawTrait)) end
+            traitRemote:FireServer(selectedTraitKey, rawTrait)
             traitRolls = traitRolls + 1
             trtStatusPara:SetDesc(unitName .. " " .. cur .. " -> " .. target .. " | " .. traitRolls)
             task.wait(0.4)
