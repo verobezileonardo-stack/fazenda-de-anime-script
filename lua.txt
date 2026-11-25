@@ -434,10 +434,24 @@ gradeLoop = function(gen)
     end
     local root = getRootPart()
     if not root then grdStatusPara:SetDesc("sem personagem"); return end
+    local target = GRADE_TARGETS[gradeTargetIdx]
+    local data = getPlayerData()
+    if data and data.PlayerUnits then
+        local unit = data.PlayerUnits[selectedGradeKey]
+        if unit then
+            local cur = unit.PlayerUnitGrade or unit.Grade
+            if cur and gradeReached(cur, target) then
+                grdStatusPara:SetDesc(cur .. " | ja no alvo!")
+                Fluent:Notify({Title = "Grade", Content = cur .. " ja esta no alvo!", Duration = 3})
+                autoGrade = false
+                Options.AutoGrade:SetValue(false)
+                return
+            end
+        end
+    end
     unequipFromDropper(selectedGradeKey, grdStatusPara)
     teleportTo(POS_GRADE)
     task.wait(0.15)
-    local target = GRADE_TARGETS[gradeTargetIdx]
     gradeRolls = 0
     local wasCollecting = false
     while autoGrade and gen == gradeGen do
@@ -451,11 +465,11 @@ gradeLoop = function(gen)
                 teleportTo(POS_GRADE)
                 task.wait(0.15)
             end
-            local data = getPlayerData()
-            if not data or not data.PlayerUnits then
+            local d = getPlayerData()
+            if not d or not d.PlayerUnits then
                 grdStatusPara:SetDesc("dados n/a"); break
             end
-            local unit = data.PlayerUnits[selectedGradeKey]
+            local unit = d.PlayerUnits[selectedGradeKey]
             if not unit then grdStatusPara:SetDesc("unidade removida"); break end
             local cur = unit.PlayerUnitGrade or unit.Grade
             if not cur then grdStatusPara:SetDesc("grade nil"); break end
@@ -490,10 +504,24 @@ traitLoop = function(gen)
     end
     local root = getRootPart()
     if not root then trtStatusPara:SetDesc("sem personagem"); return end
+    local target = TRAIT_TARGETS[traitTargetIdx]
+    local data = getPlayerData()
+    if data and data.PlayerUnits then
+        local unit = data.PlayerUnits[selectedTraitKey]
+        if unit then
+            local cur = unit.PlayerUnitTrait or unit.Trait
+            if cur and cur == target then
+                trtStatusPara:SetDesc(cur .. " | ja no alvo!")
+                Fluent:Notify({Title = "Trait", Content = cur .. " ja esta no alvo!", Duration = 3})
+                autoTrait = false
+                Options.AutoTrait:SetValue(false)
+                return
+            end
+        end
+    end
     unequipFromDropper(selectedTraitKey, trtStatusPara)
     teleportTo(POS_TRAIT)
     task.wait(0.15)
-    local target = TRAIT_TARGETS[traitTargetIdx]
     traitRolls = 0
     local wasCollecting = false
     while autoTrait and gen == traitGen do
@@ -507,11 +535,11 @@ traitLoop = function(gen)
                 teleportTo(POS_TRAIT)
                 task.wait(0.15)
             end
-            local data = getPlayerData()
-            if not data or not data.PlayerUnits then
+            local d = getPlayerData()
+            if not d or not d.PlayerUnits then
                 trtStatusPara:SetDesc("dados n/a"); break
             end
-            local unit = data.PlayerUnits[selectedTraitKey]
+            local unit = d.PlayerUnits[selectedTraitKey]
             if not unit then trtStatusPara:SetDesc("unidade removida"); break end
             local cur = unit.PlayerUnitTrait or unit.Trait
             if not cur then trtStatusPara:SetDesc("trait nil"); break end
@@ -537,20 +565,35 @@ end
 ----------------------------------------------------------------
 -- background unit refresh (every 10s)
 ----------------------------------------------------------------
+local function findLabelForKey(key)
+    for label, k in pairs(labelToKey) do
+        if k == key then return label end
+    end
+    return nil
+end
+
 task.spawn(function()
     while task.wait(10) do
+        local prevGradeKey = selectedGradeKey
+        local prevTraitKey = selectedTraitKey
         refreshUnits()
-        local prevGrade = selectedGradeKey and Options.GradeUnit.Value or nil
-        local prevTrait = selectedTraitKey and Options.TraitUnit.Value or nil
         pcall(function()
             Options.GradeUnit:SetValues(unitLabels)
             Options.TraitUnit:SetValues(unitLabels)
         end)
-        if prevGrade and labelToKey[prevGrade] then
-            pcall(function() Options.GradeUnit:SetValue(prevGrade) end)
+        if prevGradeKey then
+            local label = findLabelForKey(prevGradeKey)
+            if label then
+                pcall(function() Options.GradeUnit:SetValue(label) end)
+            end
+            selectedGradeKey = prevGradeKey
         end
-        if prevTrait and labelToKey[prevTrait] then
-            pcall(function() Options.TraitUnit:SetValue(prevTrait) end)
+        if prevTraitKey then
+            local label = findLabelForKey(prevTraitKey)
+            if label then
+                pcall(function() Options.TraitUnit:SetValue(label) end)
+            end
+            selectedTraitKey = prevTraitKey
         end
     end
 end)
