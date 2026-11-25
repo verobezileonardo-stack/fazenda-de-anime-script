@@ -73,8 +73,8 @@ local selectedGradeKey, selectedTraitKey = nil, nil
 local POS_GRADE = Vector3.new(-1778.7, 6.5, 27.8)
 local POS_TRAIT = Vector3.new(-1810.7, 6.5, 28.3)
 
-local unitLabels = {}
-local labelToKey = {}
+local gradeLabels, gradeLabelToKey = {}, {}
+local traitLabels, traitLabelToKey = {}, {}
 
 ----------------------------------------------------------------
 -- helpers
@@ -126,22 +126,32 @@ local function teleportTo(target)
     end
 end
 
+local function buildLabel(u, mode)
+    local parts = {u.name}
+    if u.variant ~= "Normal" then table.insert(parts, u.variant) end
+    if mode == "grade" then
+        table.insert(parts, "| " .. (u.grade or "-"))
+    else
+        table.insert(parts, "| " .. (u.trait or "-"))
+    end
+    return table.concat(parts, " ") .. u.eq
+end
+
 local function refreshUnits()
     local data = getPlayerData()
-    unitLabels = {}
-    labelToKey = {}
+    gradeLabels, gradeLabelToKey = {}, {}
+    traitLabels, traitLabelToKey = {}, {}
     if not data or not data.PlayerUnits then return end
     local sorted = {}
-    local seen = {}
     for key, unit in pairs(data.PlayerUnits) do
         local name = unit.PlayerUnitName
         if not name or name == "" then continue end
-        local grade = unit.Grade
-        local trait = unit.Trait
-        local level = unit.Level or 1
-        local variant = unit.Variant or "Normal"
-        local eq = unit.Equipped and " [E]" or ""
-        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, level = level, variant = variant, eq = eq})
+        table.insert(sorted, {
+            key = key, name = name,
+            grade = unit.Grade, trait = unit.Trait,
+            level = unit.Level or 1, variant = unit.Variant or "Normal",
+            eq = unit.Equipped and " [E]" or ""
+        })
     end
     table.sort(sorted, function(a,b)
         if a.name ~= b.name then return a.name < b.name end
@@ -153,26 +163,21 @@ local function refreshUnits()
         if a.level ~= b.level then return a.level < b.level end
         return a.key < b.key
     end)
+    local seenG, seenT = {}, {}
     for _, u in ipairs(sorted) do
-        local parts = {u.name}
-        if u.variant ~= "Normal" then table.insert(parts, u.variant) end
-        table.insert(parts, "Lv" .. u.level)
-        if u.grade or u.trait then
-            local stats = {}
-            if u.grade then table.insert(stats, u.grade) end
-            if u.trait then table.insert(stats, u.trait) end
-            table.insert(parts, "| " .. table.concat(stats, " | "))
-        end
-        local base = table.concat(parts, " ") .. u.eq
-        local label = base
-        local n = 1
-        while seen[label] do
-            n = n + 1
-            label = base .. " #" .. n
-        end
-        seen[label] = true
-        table.insert(unitLabels, label)
-        labelToKey[label] = u.key
+        local gBase = buildLabel(u, "grade")
+        local gLabel, gn = gBase, 1
+        while seenG[gLabel] do gn = gn + 1; gLabel = gBase .. " #" .. gn end
+        seenG[gLabel] = true
+        table.insert(gradeLabels, gLabel)
+        gradeLabelToKey[gLabel] = u.key
+
+        local tBase = buildLabel(u, "trait")
+        local tLabel, tn = tBase, 1
+        while seenT[tLabel] do tn = tn + 1; tLabel = tBase .. " #" .. tn end
+        seenT[tLabel] = true
+        table.insert(traitLabels, tLabel)
+        traitLabelToKey[tLabel] = u.key
     end
 end
 
@@ -296,13 +301,13 @@ refreshUnits()
 Tabs.Grade:AddDropdown("GradeUnit", {
     Title = "Unidade",
     Description = "Selecione a unidade para reroll de grade",
-    Values = unitLabels,
+    Values = gradeLabels,
     Default = nil
 })
 
 Options.GradeUnit:OnChanged(function()
     local label = Options.GradeUnit.Value
-    selectedGradeKey = labelToKey[label] or nil
+    selectedGradeKey = gradeLabelToKey[label] or nil
 end)
 
 Tabs.Grade:AddDropdown("GradeTarget", {
@@ -347,13 +352,13 @@ end)
 Tabs.Trait:AddDropdown("TraitUnit", {
     Title = "Unidade",
     Description = "Selecione a unidade para reroll de trait",
-    Values = unitLabels,
+    Values = traitLabels,
     Default = nil
 })
 
 Options.TraitUnit:OnChanged(function()
     local label = Options.TraitUnit.Value
-    selectedTraitKey = labelToKey[label] or nil
+    selectedTraitKey = traitLabelToKey[label] or nil
 end)
 
 Tabs.Trait:AddDropdown("TraitTarget", {
@@ -623,8 +628,8 @@ end
 ----------------------------------------------------------------
 -- background unit refresh (every 10s)
 ----------------------------------------------------------------
-local function findLabelForKey(key)
-    for label, k in pairs(labelToKey) do
+local function findLabelForKey(map, key)
+    for label, k in pairs(map) do
         if k == key then return label end
     end
     return nil
@@ -636,21 +641,17 @@ task.spawn(function()
         local prevTraitKey = selectedTraitKey
         refreshUnits()
         pcall(function()
-            Options.GradeUnit:SetValues(unitLabels)
-            Options.TraitUnit:SetValues(unitLabels)
+            Options.GradeUnit:SetValues(gradeLabels)
+            Options.TraitUnit:SetValues(traitLabels)
         end)
         if prevGradeKey then
-            local label = findLabelForKey(prevGradeKey)
-            if label then
-                pcall(function() Options.GradeUnit:SetValue(label) end)
-            end
+            local label = findLabelForKey(gradeLabelToKey, prevGradeKey)
+            if label then pcall(function() Options.GradeUnit:SetValue(label) end) end
             selectedGradeKey = prevGradeKey
         end
         if prevTraitKey then
-            local label = findLabelForKey(prevTraitKey)
-            if label then
-                pcall(function() Options.TraitUnit:SetValue(label) end)
-            end
+            local label = findLabelForKey(traitLabelToKey, prevTraitKey)
+            if label then pcall(function() Options.TraitUnit:SetValue(label) end) end
             selectedTraitKey = prevTraitKey
         end
     end
