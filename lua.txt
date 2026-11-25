@@ -161,7 +161,7 @@ local function refreshUnits()
             local stats = {}
             if u.grade then table.insert(stats, u.grade) end
             if u.trait then table.insert(stats, u.trait) end
-            table.insert(parts, "- " .. table.concat(stats, " / "))
+            table.insert(parts, "| " .. table.concat(stats, " | "))
         end
         local base = table.concat(parts, " ") .. u.eq
         local label = base
