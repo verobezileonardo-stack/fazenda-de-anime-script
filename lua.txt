@@ -37,6 +37,8 @@ local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local collectRemote = remotes:WaitForChild("CollectVariantTokenSpawn")
 local gradeRemote = remotes:WaitForChild("NewRerollPlayerUnitGrade")
 local traitRemote = remotes:WaitForChild("RerollPlayerUnitTrait")
+local removeFromDropper = remotes:WaitForChild("RemovePlayerUnitFromDropper")
+local equipBest = remotes:WaitForChild("EquipBestPlayerUnits")
 
 ----------------------------------------------------------------
 -- player data via Replica
@@ -130,15 +132,25 @@ local function refreshUnits()
     labelToKey = {}
     if not data or not data.PlayerUnits then return end
     local sorted = {}
+    local seen = {}
     for key, unit in pairs(data.PlayerUnits) do
-        local name = unit.PlayerUnitName or "?"
-        local grade = unit.PlayerUnitGrade or unit.Grade or "?"
-        local trait = unit.PlayerUnitTrait or unit.Trait or "?"
-        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait})
+        local name = unit.PlayerUnitName
+        if not name or name == "" then continue end
+        local grade = unit.PlayerUnitGrade or unit.Grade or "F"
+        local trait = unit.PlayerUnitTrait or unit.Trait or "-"
+        local eq = unit.Equipped and " *" or ""
+        table.insert(sorted, {key = key, name = name, grade = grade, trait = trait, eq = eq})
     end
     table.sort(sorted, function(a,b) return a.name < b.name end)
     for _, u in ipairs(sorted) do
-        local label = u.name .. " [" .. u.grade .. "] (" .. u.trait .. ")"
+        local base = u.name .. " [" .. u.grade .. "] (" .. u.trait .. ")" .. u.eq
+        local label = base
+        local n = 1
+        while seen[label] do
+            n = n + 1
+            label = base .. " #" .. n
+        end
+        seen[label] = true
         table.insert(unitLabels, label)
         labelToKey[label] = u.key
     end
@@ -174,12 +186,12 @@ local colStatus, grdStatusPara, trtStatusPara
 -- TAB: Coletor
 ----------------------------------------------------------------
 Tabs.Coletor:AddToggle("AutoCollect", {
-    Title = "⚡ Auto Collect",
+    Title = "Auto Collect",
     Description = "Coleta tokens variantes automaticamente",
     Default = false
 })
 
-colStatus = Tabs.Coletor:AddParagraph({Title = "📊 Status", Content = "desligado"})
+colStatus = Tabs.Coletor:AddParagraph({Title = "Status", Content = "desligado"})
 
 Options.AutoCollect:OnChanged(function()
     autoCollect = Options.AutoCollect.Value
@@ -195,7 +207,7 @@ end)
 refreshUnits()
 
 Tabs.Grade:AddDropdown("GradeUnit", {
-    Title = "🎯 Unidade",
+    Title = "Unidade",
     Description = "Selecione a unidade para reroll de grade",
     Values = unitLabels,
     Default = nil
@@ -207,7 +219,7 @@ Options.GradeUnit:OnChanged(function()
 end)
 
 Tabs.Grade:AddDropdown("GradeTarget", {
-    Title = "⭐ Alvo Grade",
+    Title = "Alvo Grade",
     Values = GRADE_TARGETS,
     Default = 1
 })
@@ -220,12 +232,12 @@ Options.GradeTarget:OnChanged(function()
 end)
 
 Tabs.Grade:AddToggle("AutoGrade", {
-    Title = "⬆️ Auto Grade",
+    Title = "Auto Grade",
     Description = "Reroll grade (exclusivo com Auto Trait)",
     Default = false
 })
 
-grdStatusPara = Tabs.Grade:AddParagraph({Title = "📊 Status", Content = "desligado"})
+grdStatusPara = Tabs.Grade:AddParagraph({Title = "Status", Content = "desligado"})
 
 Options.AutoGrade:OnChanged(function()
     local on = Options.AutoGrade.Value
@@ -246,7 +258,7 @@ end)
 -- TAB: Trait
 ----------------------------------------------------------------
 Tabs.Trait:AddDropdown("TraitUnit", {
-    Title = "🎯 Unidade",
+    Title = "Unidade",
     Description = "Selecione a unidade para reroll de trait",
     Values = unitLabels,
     Default = nil
@@ -258,7 +270,7 @@ Options.TraitUnit:OnChanged(function()
 end)
 
 Tabs.Trait:AddDropdown("TraitTarget", {
-    Title = "✨ Alvo Trait",
+    Title = "Alvo Trait",
     Values = TRAIT_TARGETS,
     Default = 1
 })
@@ -271,12 +283,12 @@ Options.TraitTarget:OnChanged(function()
 end)
 
 Tabs.Trait:AddToggle("AutoTrait", {
-    Title = "✨ Auto Trait",
+    Title = "Auto Trait",
     Description = "Reroll trait (exclusivo com Auto Grade)",
     Default = false
 })
 
-trtStatusPara = Tabs.Trait:AddParagraph({Title = "📊 Status", Content = "desligado"})
+trtStatusPara = Tabs.Trait:AddParagraph({Title = "Status", Content = "desligado"})
 
 Options.AutoTrait:OnChanged(function()
     local on = Options.AutoTrait.Value
@@ -379,6 +391,15 @@ gradeLoop = function(gen)
     end
     local root = getRootPart()
     if not root then grdStatusPara:SetDesc("sem personagem"); return end
+    local data = getPlayerData()
+    if data and data.PlayerUnits then
+        local unit = data.PlayerUnits[selectedGradeKey]
+        if unit and unit.Equipped then
+            grdStatusPara:SetDesc("removendo do dropper...")
+            removeFromDropper:FireServer(selectedGradeKey)
+            task.wait(0.5)
+        end
+    end
     teleportTo(POS_GRADE)
     task.wait(0.3)
     local target = GRADE_TARGETS[gradeTargetIdx]
@@ -395,7 +416,7 @@ gradeLoop = function(gen)
                 teleportTo(POS_GRADE)
                 task.wait(0.3)
             end
-            local data = getPlayerData()
+            data = getPlayerData()
             if not data or not data.PlayerUnits then
                 grdStatusPara:SetDesc("dados n/a"); break
             end
@@ -405,9 +426,12 @@ gradeLoop = function(gen)
             if not cur then grdStatusPara:SetDesc("grade nil"); break end
             if gradeReached(cur, target) then
                 grdStatusPara:SetDesc(cur .. " | alvo atingido! (" .. gradeRolls .. " rolls)")
-                Fluent:Notify({Title = "⬆️ Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
+                Fluent:Notify({Title = "Grade", Content = cur .. " atingido em " .. gradeRolls .. " rolls!", Duration = 5})
                 autoGrade = false
                 Options.AutoGrade:SetValue(false)
+                grdStatusPara:SetDesc("equipando melhores...")
+                equipBest:FireServer()
+                task.wait(0.5)
                 break
             end
             gradeRemote:FireServer(selectedGradeKey, false, cur)
@@ -431,6 +455,15 @@ traitLoop = function(gen)
     end
     local root = getRootPart()
     if not root then trtStatusPara:SetDesc("sem personagem"); return end
+    local data = getPlayerData()
+    if data and data.PlayerUnits then
+        local unit = data.PlayerUnits[selectedTraitKey]
+        if unit and unit.Equipped then
+            trtStatusPara:SetDesc("removendo do dropper...")
+            removeFromDropper:FireServer(selectedTraitKey)
+            task.wait(0.5)
+        end
+    end
     teleportTo(POS_TRAIT)
     task.wait(0.2)
     local target = TRAIT_TARGETS[traitTargetIdx]
@@ -447,7 +480,7 @@ traitLoop = function(gen)
                 teleportTo(POS_TRAIT)
                 task.wait(0.3)
             end
-            local data = getPlayerData()
+            data = getPlayerData()
             if not data or not data.PlayerUnits then
                 trtStatusPara:SetDesc("dados n/a"); break
             end
@@ -457,9 +490,12 @@ traitLoop = function(gen)
             if not cur then trtStatusPara:SetDesc("trait nil"); break end
             if cur == target then
                 trtStatusPara:SetDesc(cur .. " | alvo atingido! (" .. traitRolls .. " rolls)")
-                Fluent:Notify({Title = "✨ Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
+                Fluent:Notify({Title = "Trait", Content = cur .. " atingido em " .. traitRolls .. " rolls!", Duration = 5})
                 autoTrait = false
                 Options.AutoTrait:SetValue(false)
+                trtStatusPara:SetDesc("equipando melhores...")
+                equipBest:FireServer()
+                task.wait(0.5)
                 break
             end
             traitRemote:FireServer(selectedTraitKey, cur)
@@ -521,7 +557,7 @@ end)
 ----------------------------------------------------------------
 Window:SelectTab(1)
 Fluent:Notify({
-    Title = "🌾 Fazenda de Anime",
+    Title = "Fazenda de Anime",
     Content = "Script carregado!",
     Duration = 5
 })
