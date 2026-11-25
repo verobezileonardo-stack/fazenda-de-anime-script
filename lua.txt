@@ -59,6 +59,7 @@ end
 -- state
 ----------------------------------------------------------------
 local autoCollect, autoGrade, autoTrait = false, false, false
+local configLoading = false
 local collecting = false
 local cachedBasePos
 local totalCollected, gradeRolls, traitRolls = 0, 0, 0
@@ -357,6 +358,7 @@ Tabs.Grade:AddToggle("AutoGrade", {
 grdStatusPara = Tabs.Grade:AddParagraph({Title = "Status", Content = "desligado"})
 
 Options.AutoGrade:OnChanged(function()
+    if configLoading then return end
     local on = Options.AutoGrade.Value
     if on then
         if autoTrait then
@@ -408,6 +410,7 @@ Tabs.Trait:AddToggle("AutoTrait", {
 trtStatusPara = Tabs.Trait:AddParagraph({Title = "Status", Content = "desligado"})
 
 Options.AutoTrait:OnChanged(function()
+    if configLoading then return end
     local on = Options.AutoTrait.Value
     if on then
         if autoGrade then
@@ -431,31 +434,106 @@ SaveManager:IgnoreThemeSettings()
 InterfaceManager:SetFolder("FazendaDeAnime")
 SaveManager:SetFolder("FazendaDeAnime/config")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
-
 do
-    local cfgSection = Tabs.Settings:AddSection("Gerenciar")
-    cfgSection:AddButton({
-        Title = "Deletar config",
-        Description = "Remove a config selecionada",
-        Callback = function()
-            local name = Options.SaveManager_ConfigList.Value
-            if not name then
-                return Fluent:Notify({Title = "Config", Content = "Selecione uma config primeiro", Duration = 3})
-            end
-            local path = SaveManager.Folder .. "/settings/" .. name .. ".json"
-            if not isfile(path) then return end
-            local ok = pcall(delfile, path)
-            if not ok then pcall(writefile, path, "") end
-            local autoPath = SaveManager.Folder .. "/settings/autoload.txt"
-            if isfile(autoPath) and readfile(autoPath) == name then
-                pcall(delfile, autoPath)
-            end
-            Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
-            Options.SaveManager_ConfigList:SetValue(nil)
-            Fluent:Notify({Title = "Config", Content = name .. " deletada", Duration = 3})
+    local section = Tabs.Settings:AddSection("Configuration")
+    section:AddInput("SaveManager_ConfigName", {Title = "Config name"})
+    section:AddDropdown("SaveManager_ConfigList", {Title = "Config list", Values = SaveManager:RefreshConfigList(), AllowNull = true})
+
+    section:AddButton({Title = "Create config", Callback = function()
+        local name = Options.SaveManager_ConfigName.Value
+        if name:gsub(" ", "") == "" then
+            return Fluent:Notify({Title = "Config", Content = "Nome vazio", Duration = 3})
         end
-    })
+        local ok, err = SaveManager:Save(name)
+        if not ok then return Fluent:Notify({Title = "Config", Content = "Erro: " .. tostring(err), Duration = 5}) end
+        Fluent:Notify({Title = "Config", Content = name .. " criada", Duration = 3})
+        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+        Options.SaveManager_ConfigList:SetValue(name)
+    end})
+
+    section:AddButton({Title = "Load config", Callback = function()
+        local name = Options.SaveManager_ConfigList.Value
+        if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
+        configLoading = true
+        autoGrade = false
+        autoTrait = false
+        gradeGen = gradeGen + 1
+        traitGen = traitGen + 1
+        task.wait(0.5)
+        local ok, err = SaveManager:Load(name)
+        if not ok then
+            configLoading = false
+            return Fluent:Notify({Title = "Config", Content = "Erro: " .. tostring(err), Duration = 5})
+        end
+        task.wait(0.3)
+        configLoading = false
+        if Options.AutoGrade.Value then
+            autoGrade = true
+            gradeGen = gradeGen + 1
+            task.spawn(gradeLoop, gradeGen)
+        end
+        if Options.AutoTrait.Value then
+            autoTrait = true
+            traitGen = traitGen + 1
+            task.spawn(traitLoop, traitGen)
+        end
+        Fluent:Notify({Title = "Config", Content = name .. " carregada", Duration = 3})
+    end})
+
+    section:AddButton({Title = "Overwrite config", Callback = function()
+        local name = Options.SaveManager_ConfigList.Value
+        if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
+        local ok, err = SaveManager:Save(name)
+        if not ok then return Fluent:Notify({Title = "Config", Content = "Erro: " .. tostring(err), Duration = 5}) end
+        Fluent:Notify({Title = "Config", Content = name .. " atualizada", Duration = 3})
+    end})
+
+    local function tryDelete(path)
+        for _, fn in ipairs({delfile, rmfile}) do
+            if type(fn) == "function" then
+                local ok = pcall(fn, path)
+                if ok and not isfile(path) then return true end
+            end
+        end
+        return false
+    end
+
+    section:AddButton({Title = "Delete config", Callback = function()
+        local name = Options.SaveManager_ConfigList.Value
+        if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
+        local path = SaveManager.Folder .. "/settings/" .. name .. ".json"
+        if not isfile(path) then return end
+        if not tryDelete(path) then
+            return Fluent:Notify({Title = "Config", Content = "Executor nao suporta deletar arquivos", Duration = 5})
+        end
+        local autoPath = SaveManager.Folder .. "/settings/autoload.txt"
+        if isfile(autoPath) and readfile(autoPath) == name then
+            tryDelete(autoPath)
+        end
+        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+        Options.SaveManager_ConfigList:SetValue(nil)
+        Fluent:Notify({Title = "Config", Content = name .. " deletada", Duration = 3})
+    end})
+
+    section:AddButton({Title = "Refresh list", Callback = function()
+        Options.SaveManager_ConfigList:SetValues(SaveManager:RefreshConfigList())
+        Options.SaveManager_ConfigList:SetValue(nil)
+    end})
+
+    local AutoloadButton
+    AutoloadButton = section:AddButton({Title = "Set as autoload", Description = "Autoload: nenhum", Callback = function()
+        local name = Options.SaveManager_ConfigList.Value
+        if not name then return Fluent:Notify({Title = "Config", Content = "Selecione uma config", Duration = 3}) end
+        writefile(SaveManager.Folder .. "/settings/autoload.txt", name)
+        AutoloadButton:SetDesc("Autoload: " .. name)
+        Fluent:Notify({Title = "Config", Content = name .. " setada como autoload", Duration = 3})
+    end})
+
+    if isfile(SaveManager.Folder .. "/settings/autoload.txt") then
+        AutoloadButton:SetDesc("Autoload: " .. readfile(SaveManager.Folder .. "/settings/autoload.txt"))
+    end
+
+    SaveManager:SetIgnoreIndexes({"SaveManager_ConfigList", "SaveManager_ConfigName"})
 end
 
 ----------------------------------------------------------------
