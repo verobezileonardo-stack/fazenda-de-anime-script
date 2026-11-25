@@ -468,10 +468,23 @@ do
         pcall(writefile, path, "")
     end
 
+    local function setDropdownVisible(visible)
+        pcall(function()
+            local dd = Options.SaveManager_ConfigList
+            local frame = dd.Instance or dd.Frame
+            if frame and frame.Visible ~= nil then frame.Visible = visible end
+        end)
+    end
+
     local function refreshDropdown(selectName)
         local list = SaveManager:RefreshConfigList()
         local dd = Options.SaveManager_ConfigList
-        if selectName then
+        if #list == 0 then
+            dd:SetValues({})
+            dd:SetValue(nil)
+            setDropdownVisible(false)
+        elseif selectName then
+            setDropdownVisible(true)
             dd:SetValues(list)
             task.wait(0.05)
             dd:SetValue(selectName)
@@ -479,9 +492,15 @@ do
             dd:SetValues({"--"})
             dd:SetValue("--")
             task.wait(0.05)
+            setDropdownVisible(true)
             dd:SetValues(list)
             dd:SetValue(nil)
         end
+    end
+
+    do
+        local initList = SaveManager:RefreshConfigList()
+        if #initList == 0 then setDropdownVisible(false) end
     end
 
     section:AddButton({Title = "Create config", Callback = function()
