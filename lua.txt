@@ -47,6 +47,7 @@ local depositCrateRemote = remotes:WaitForChild("DepositCrate", 5)
 local collectPolishedRemote = remotes:WaitForChild("CollectPolisherCrate", 5)
 local sellCrateRemote = remotes:WaitForChild("SellCrate", 5)
 local useItemRemote = remotes:WaitForChild("UseItem", 5)
+local useWeatherGlobeRemote = remotes:WaitForChild("UseWeatherGlobe", 5)
 do
     local missing = {}
     if not pickupCrateRemote then table.insert(missing, "PickupCrateBox") end
@@ -54,6 +55,7 @@ do
     if not collectPolishedRemote then table.insert(missing, "CollectPolisherCrate") end
     if not sellCrateRemote then table.insert(missing, "SellCrate") end
     if not useItemRemote then table.insert(missing, "UseItem") end
+    if not useWeatherGlobeRemote then table.insert(missing, "UseWeatherGlobe") end
     if #missing > 0 then warn("[DEBUG] CRATE REMOTES MISSING: " .. table.concat(missing, ", ")) end
 end
 
@@ -632,8 +634,7 @@ do
                 return Fluent:Notify({Title = "Potions", Content = "Selecione um item", Duration = 3})
             end
             if selCat == "Weather Globes" then
-                local r = remotes:FindFirstChild("UseWeatherGlobe")
-                if r then r:FireServer(selPotionKey) else return Fluent:Notify({Title = "Potions", Content = "Remote nao encontrado", Duration = 3}) end
+                if useWeatherGlobeRemote then useWeatherGlobeRemote:FireServer(selPotionKey) else return Fluent:Notify({Title = "Potions", Content = "Remote nao encontrado", Duration = 3}) end
             else
                 if useItemRemote then useItemRemote:FireServer(selPotionKey) else return Fluent:Notify({Title = "Potions", Content = "Remote nao encontrado", Duration = 3}) end
             end
@@ -850,7 +851,7 @@ gradeLoop = function(gen)
         return
     end
     local root = getRootPart()
-    if not root then grdStatusPara:SetDesc("sem personagem"); return end
+    if not root then grdStatusPara:SetDesc("sem personagem"); autoGrade = false; Options.AutoGrade:SetValue(false); return end
     local target = GRADE_TARGETS[gradeTargetIdx]
     local data = getPlayerData()
     if not data or not data.PlayerUnits or not data.PlayerUnits[selectedGradeKey] then
@@ -935,7 +936,10 @@ gradeLoop = function(gen)
             task.wait(1.0)
         end
     end
-    if reachedTarget then
+    if not reachedTarget then
+        autoGrade = false
+        Options.AutoGrade:SetValue(false)
+    else
         grdStatusPara:SetDesc("equipando melhores...")
         equipBest:FireServer()
         task.wait(0.3)
@@ -955,7 +959,7 @@ traitLoop = function(gen)
         return
     end
     local root = getRootPart()
-    if not root then trtStatusPara:SetDesc("sem personagem"); return end
+    if not root then trtStatusPara:SetDesc("sem personagem"); autoTrait = false; Options.AutoTrait:SetValue(false); return end
     local target = TRAIT_TARGETS[traitTargetIdx]
     local data = getPlayerData()
     if not data or not data.PlayerUnits or not data.PlayerUnits[selectedTraitKey] then
@@ -1039,7 +1043,10 @@ traitLoop = function(gen)
             task.wait(1.0)
         end
     end
-    if reachedTarget then
+    if not reachedTarget then
+        autoTrait = false
+        Options.AutoTrait:SetValue(false)
+    else
         trtStatusPara:SetDesc("equipando melhores...")
         equipBest:FireServer()
         task.wait(0.3)
@@ -1226,7 +1233,7 @@ crateLoop = function(gen)
 end
 
 ----------------------------------------------------------------
--- background unit refresh (every 10s)
+-- background unit refresh (every 15s)
 ----------------------------------------------------------------
 local function findLabelForKey(map, key)
     for label, k in pairs(map) do
